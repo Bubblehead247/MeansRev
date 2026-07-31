@@ -377,8 +377,20 @@ def confirm_exit_fills():
             logger.error(f"Fallback exit order failed for {symbol}: {e}", exc_info=True)
 
 
-def get_last_fill_price(symbol: str, side: str) -> float | None:
-    """Return the filled_avg_price of the most recent filled order for symbol on the given side."""
+def get_last_fill_price(symbol: str, side: str,
+                        not_before: date | None = None) -> float | None:
+    """Most recent fill price for ``symbol`` on ``side``, no earlier than a date.
+
+    ``not_before`` matters more than it looks. This walks the last 10 closed
+    orders and takes the first match, and MeansRev's universe is small enough
+    that SPY, QQQ and DIA each appear in it repeatedly — so without a bound, a
+    *previous* round trip's sell can be handed back as the exit price for the
+    trade being booked now. The caller passes the position's own entry date:
+    nothing before a position was opened can be its exit.
+
+    Returns ``None`` when there is no qualifying fill, which callers must treat
+    as "no evidence" rather than substituting a guess.
+    """
     try:
         orders = _client.get_orders(
             GetOrdersRequest(status=QueryOrderStatus.CLOSED, symbols=[symbol], limit=10)
@@ -387,6 +399,12 @@ def get_last_fill_price(symbol: str, side: str) -> float | None:
             if (str(order.side).lower() == side.lower()
                     and order.filled_at
                     and order.filled_avg_price):
+                if not_before is not None and order.filled_at.date() < not_before:
+                    logger.info(
+                        f"{symbol}: ignoring a {side} filled {order.filled_at.date()}, "
+                        f"before this position opened ({not_before})."
+                    )
+                    continue
                 return float(order.filled_avg_price)
     except Exception as e:
         logger.error(f"Could not fetch fill price for {symbol} ({side}): {e}", exc_info=True)

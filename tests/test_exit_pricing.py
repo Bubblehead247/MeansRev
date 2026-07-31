@@ -328,3 +328,38 @@ def _read_csv(path):
 
     with open(path, newline="", encoding="utf-8") as handle:
         yield from csv.DictReader(handle)
+
+
+# --------------------------------------------------------------------------
+# W3 — a previous round trip is not evidence about this one
+# --------------------------------------------------------------------------
+
+
+def test_a_sell_from_before_the_position_opened_is_ignored(monkeypatch):
+    """MeansRev's universe is small, so symbols repeat.
+
+    `get_last_fill_price` walks the last 10 closed orders and takes the first
+    match. Unbounded, an *earlier* round trip's sell in the same symbol is handed
+    back as the exit price for the trade being booked now — a real price, from
+    the wrong trade.
+    """
+    old_sell = _FakeOrder("old", "sell", 40, 500.00,
+                          filled_at=datetime(2026, 6, 1, tzinfo=timezone.utc))
+    monkeypatch.setattr(executor._client, "get_orders", lambda req: [old_sell])
+
+    assert executor.get_last_fill_price("SPY", "sell") == 500.00, (
+        "unbounded, the old fill is returned")
+
+    assert executor.get_last_fill_price(
+        "SPY", "sell", not_before=date(2026, 7, 20)) is None, (
+        "a fill from before the position opened was accepted as its exit")
+
+
+def test_a_sell_after_the_position_opened_is_used(monkeypatch):
+    """The bound must not reject the fill it is looking for."""
+    recent = _FakeOrder("new", "sell", 40, 512.34,
+                        filled_at=datetime(2026, 7, 28, tzinfo=timezone.utc))
+    monkeypatch.setattr(executor._client, "get_orders", lambda req: [recent])
+
+    assert executor.get_last_fill_price(
+        "SPY", "sell", not_before=date(2026, 7, 20)) == 512.34
