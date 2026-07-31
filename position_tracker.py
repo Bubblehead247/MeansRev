@@ -32,8 +32,15 @@ def _load() -> dict:
 
 
 def _save(data: dict):
-    with open(STATE_FILE, "w") as f:
-        json.dump(data, f, indent=2, default=str)
+    """Write the position book atomically.
+
+    A plain write truncates the file before filling it, so a crash in between
+    leaves a truncated one — and this file is what says which positions are open
+    and where their stops are. See ``quantcore.statefile``.
+    """
+    from quantcore.statefile import write_json_atomic
+
+    write_json_atomic(STATE_FILE, data, default=str)
 
 
 # ── Public Interface ──────────────────────────────────────────────────────────

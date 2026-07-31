@@ -15,7 +15,7 @@ import json
 import logging
 import sys
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from datetime import time as dt_time
 from pathlib import Path
 
@@ -23,6 +23,7 @@ import schedule
 
 from quantcore.jobs import JobSpec, run_job
 from quantcore.single_instance import SingleInstance
+from quantcore.statefile import write_json_atomic
 
 import config
 import eval_checkpoint
@@ -70,13 +71,29 @@ def _json_scalar(o):
     raise TypeError(f"Not JSON serializable: {type(o)}")
 
 
-def _save_pending():
-    """Mirror the in-memory queue to disk (called after scan and after execute)."""
+def _save_pending(fresh: bool = False):
+    """Mirror the in-memory queue to disk.
+
+    ``fresh=True`` stamps the queue with now — that is the scan, which is when
+    these signals were actually produced. Every other save keeps the existing
+    timestamp, because `pre_open_execute` now saves after each action it takes,
+    and re-stamping there would restart the ``PENDING_MAX_AGE_DAYS`` clock on a
+    queue that has not become any newer.
+    """
+    queued_at = None
+    if not fresh and PENDING_FILE.exists():
+        try:
+            queued_at = json.loads(PENDING_FILE.read_text()).get("queued_at")
+        except (OSError, ValueError):
+            queued_at = None
+
     payload = {
-        "queued_at": datetime.now(timezone.utc).isoformat(),
+        "queued_at": queued_at or datetime.now(timezone.utc).isoformat(),
         "actions":   _pending,
     }
-    PENDING_FILE.write_text(json.dumps(payload, default=_json_scalar, indent=2))
+    # Atomic: `pre_open_execute` now saves after every action it takes, so a
+    # truncated queue here would lose orders that have not been sent yet.
+    write_json_atomic(PENDING_FILE, payload, default=_json_scalar)
 
 
 def _load_pending():
@@ -143,9 +160,14 @@ def post_close_scan():
         if pos_data.get("exit_status") != "open" or symbol in open_positions:
             continue
 
+        # Bounded by this position's own entry date: a sell from a previous
+        # round trip in the same symbol is not evidence about this one.
+        opened_on = pos_data.get("entry_date")
         decision = exit_evidence.evaluate_vanished_position(
             pos_data,
-            exit_fill_price=executor.get_last_fill_price(symbol, side="sell"),
+            exit_fill_price=executor.get_last_fill_price(
+                symbol, side="sell",
+                not_before=date.fromisoformat(opened_on) if opened_on else None),
             entry_fill_qty=executor.get_filled_qty(symbol, side="buy"),
         )
 
@@ -230,11 +252,44 @@ def post_close_scan():
                 })
                 logger.warning(f"  🔁 Re-queued EXIT (exit_pending_retry): {symbol} | close_ref=${close_ref:.2f}")
 
-    _save_pending()
+    _check_for_mass_exit(open_positions)
+
+    _save_pending(fresh=True)
     logger.info(
         f"▶  SCAN COMPLETE | Pending queue: "
         f"{[(p['symbol'], p['action']) for p in _pending]}"
     )
+
+
+def _check_for_mass_exit(open_positions) -> None:
+    """Shout when one scan decides to close the entire book on one reason.
+
+    The weekly trend gate is off today. When it is switched on, a failed weekly
+    fetch used to make "not above the weekly SMA200" true for every symbol at
+    once, which reads as a trend break everywhere and queues an exit for the whole
+    book — caused by a network error rather than by the market.
+
+    `scanner.weekly_data_ok` now stops that at the source. This is the second
+    line: whatever the reason, closing every position in one scan is either a
+    genuine and notable market event or a bug, and both are worth being told
+    about before the orders go out at the next open. It does not block the
+    exits — a real crash should still be acted on — it makes them impossible to
+    miss.
+    """
+    if len(open_positions) < 2:
+        return
+    exits = [p for p in _pending if p["action"] == "EXIT"]
+    if len({p["symbol"] for p in exits}) < len(open_positions):
+        return
+
+    reasons = sorted({p["reason"] for p in exits})
+    detail = (f"All {len(open_positions)} open position(s) are queued to exit at "
+              f"the next open. Reason(s): {', '.join(reasons)}.")
+    logger.error(f"⚠️  WHOLE-BOOK EXIT QUEUED — {detail}")
+    try:
+        notifier.send_review_needed("ALL POSITIONS", detail)
+    except Exception as exc:  # noqa: BLE001 - never let an alert stop the scan
+        logger.error(f"Could not send whole-book exit alert: {exc}")
 
 
 def pre_open_execute():
@@ -253,7 +308,24 @@ def pre_open_execute():
 
     logger.info(f"▶  PRE-OPEN EXECUTE | Processing {len(_pending)} action(s)...")
 
-    for action in _pending:
+    # Each action is removed from the queue and the queue saved *before* the
+    # order is sent, so a retry resumes rather than restarts.
+    #
+    # The old shape submitted every action, then cleared the queue and saved. A
+    # failure partway through — after two of three orders had gone out — left the
+    # queue intact and wrote no completion marker, correctly, because the job had
+    # failed. `RestartCount 2` then retried it, the full queue reloaded, and the
+    # orders already sent were sent again. `submit_entry` guards on
+    # `has_position()`, but an unfilled limit order creates no position, so that
+    # guard does not catch it. The result is duplicate live orders.
+    #
+    # Saving before rather than after the submit is deliberate. A crash between
+    # the two costs one skipped action, which the next scan re-queues; the other
+    # order costs a duplicate live order, which cannot be undone.
+    while _pending:
+        action = _pending.pop(0)
+        _save_pending()
+
         symbol = action["symbol"]
         kind   = action["action"]
 
@@ -264,7 +336,6 @@ def pre_open_execute():
         else:
             logger.warning(f"Unknown action type '{kind}' for {symbol} — skipping.")
 
-    _pending.clear()
     _save_pending()
     logger.info("▶  PRE-OPEN EXECUTE COMPLETE")
 

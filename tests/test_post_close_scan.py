@@ -55,7 +55,7 @@ def harness(monkeypatch, xlv_state):
 
     # There was never a sell, so the fill lookup finds nothing.
     monkeypatch.setattr(main.executor, "get_last_fill_price",
-                        lambda symbol, side: None)
+                        lambda symbol, side, not_before=None: None)
     # And the broker confirms the buy filled zero shares.
     if hasattr(main.executor, "get_filled_qty"):
         monkeypatch.setattr(main.executor, "get_filled_qty",
@@ -123,7 +123,7 @@ def test_a_real_stop_out_is_still_booked(monkeypatch, harness):
     }
     # This time there IS a sell fill.
     monkeypatch.setattr(main.executor, "get_last_fill_price",
-                        lambda symbol, side: 653.18)
+                        lambda symbol, side, not_before=None: 653.18)
     if hasattr(main.executor, "get_filled_qty"):
         monkeypatch.setattr(main.executor, "get_filled_qty",
                             lambda symbol, side: 29.0)

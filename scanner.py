@@ -137,6 +137,16 @@ def evaluate_symbol(symbol: str) -> dict:
     last_weekly_sma50   = 0.0
     last_weekly_sma200  = 0.0
     last_weekly_adx     = 0.0
+    #: Did the weekly figures actually come from weekly bars?
+    #
+    # This has to be tracked separately, because the defaults above are read in
+    # opposite directions by the two gates. For an *entry*, "not above the weekly
+    # SMA200" blocks the trade — missing data is conservative. For an *exit*, the
+    # identical value means "trend has broken, get out". So a failed weekly fetch
+    # with the trend filter on would emit an exit for **every held symbol at
+    # once** — a whole-book liquidation caused by a network error rather than by
+    # anything the market did.
+    weekly_data_ok = False
     need_weekly = config.USE_TREND_FILTER or config.USE_REGIME_FILTER
 
     if need_weekly:
@@ -152,6 +162,7 @@ def evaluate_symbol(symbol: str) -> dict:
                 last_weekly_adx    = round(float(w_adx.iloc[-1]),    2)
                 above_weekly_sma50  = last_close > last_weekly_sma50
                 above_weekly_sma200 = last_close > last_weekly_sma200
+                weekly_data_ok      = True
             else:
                 logger.warning(
                     f"{symbol}: Insufficient weekly data ({len(weekly_bars)} bars) "
@@ -186,7 +197,17 @@ def evaluate_symbol(symbol: str) -> dict:
     prereqs_ok         = trend_ok and daily_trend_ok and volume_ok and regime_ok
     entry_signal       = prereqs_ok and rsi_entry_trigger
     exit_signal        = rsi_crossed_below
-    weekly_exit_signal = (not above_weekly_sma200) if config.USE_TREND_FILTER else False
+    # An exit must be driven by data, never by the absence of it: `weekly_data_ok`
+    # is what stops a failed weekly fetch from reading as "trend broken" for every
+    # symbol at once. Missing data means hold, and says so loudly.
+    weekly_exit_signal = (
+        config.USE_TREND_FILTER and weekly_data_ok and not above_weekly_sma200
+    )
+    if config.USE_TREND_FILTER and not weekly_data_ok:
+        logger.error(
+            f"{symbol}: weekly data unavailable — holding rather than exiting. "
+            f"The weekly trend exit is disabled for this symbol this cycle."
+        )
 
     result = {
         "symbol":              symbol,
@@ -205,6 +226,7 @@ def evaluate_symbol(symbol: str) -> dict:
         "above_daily_sma50":   above_daily_sma50,
         "above_weekly_sma50":  above_weekly_sma50,
         "above_weekly_sma200": above_weekly_sma200,
+        "weekly_data_ok":      weekly_data_ok,
         "regime_ok":           regime_ok,
         "volume_spike":        volume_spike,
         "stop_a":              stop_a,

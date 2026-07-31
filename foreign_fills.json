@@ -1,0 +1,13 @@
+{
+  "_why": "Fills in this Alpaca account that MeansRev did not place. They are not recorded in trades.csv on purpose: that file is MeansRev's ledger, and another actor's trades in it would misstate the strategy's performance. Listing them here instead lets a wide-window audit stay honest AND quiet, rather than reporting the same six criticals forever until they are ignored.",
+  "_cause": "LiveTrader shared this account's credential and ran a market-close routine at 14:55 CT calling Alpaca's close_all_positions, which is account-wide. It flattened MeansRev's holdings along with its own. LiveTrader was retired on 2026-07-30 (its alpaca.env was renamed), so this list should never need to grow.",
+  "_recorded": "2026-07-31, bot-review W1/D2b",
+  "orders": [
+    {"order_id": "db4f4aa7-8d52-48d1-a18a-3f808eaf5a33", "symbol": "XLK", "date": "2026-06-09", "note": "LiveTrader close-all sweep, 19:55 UTC"},
+    {"order_id": "48e7dc33-d74b-45bb-b7f0-80ddbec0e374", "symbol": "XLE", "date": "2026-06-09", "note": "LiveTrader close-all sweep, 19:55 UTC"},
+    {"order_id": "5b1d7fb2-03a6-4bdc-a132-1f35a8c1c18c", "symbol": "EEM", "date": "2026-06-09", "note": "LiveTrader close-all sweep, 19:55 UTC"},
+    {"order_id": "1a1a8590-9d51-4950-9728-0db4f519f9b4", "symbol": "ANET", "date": "2026-06-09", "note": "LiveTrader close-all sweep, 19:55 UTC"},
+    {"order_id": "4e672fb4-9336-489a-8db5-ff8537fbed41", "symbol": "PH", "date": "2026-06-05", "note": "not in MeansRev's 11-symbol universe; zero mentions in bot.log"},
+    {"order_id": "4f0fa681-eca9-47ff-b9dc-59a1bc6ae247", "symbol": "ANET", "date": "2026-06-03", "note": "not in MeansRev's 11-symbol universe; zero mentions in bot.log"}
+  ]
+}
