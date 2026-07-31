@@ -4,7 +4,7 @@ sectors.py — single source of truth for symbol → sector classification.
 Used by:
   - screener.py  : tag each candidate with a sector + asset type, and persist
                    the map to sectors.csv (the "hybrid" draft step).
-  - main.py      : enforce the per-sector position cap (config.MAX_PER_SECTOR).
+  - meansrev_main.py : enforce the per-sector position cap (config.MAX_PER_SECTOR).
 
 Classification rules (first match wins):
   1. Sector / thematic ETFs  → their GICS sector (so they count alongside

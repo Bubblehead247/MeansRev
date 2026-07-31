@@ -534,7 +534,7 @@ with tab_overview:
 
     tail = read_log_tail(50)
     if not tail:
-        st.info("bot.log not yet present (run `python main.py` to start the bot).")
+        st.info("bot.log not yet present (run `python meansrev_main.py` to start the bot).")
     else:
         st.code("".join(tail), language="text")
 

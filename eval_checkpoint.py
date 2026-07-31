@@ -7,7 +7,7 @@ the point at which to evaluate EXECUTION FIDELITY. (25 trades is NOT enough to
 confirm the edge statistically — that needs ~170+ trades / years; the backtest is
 the edge evidence. 25 is the "is the bot executing the backtest faithfully" gate.)
 
-The bot calls check_and_notify() once a day from main.status_report(). You can
+The bot calls check_and_notify() once a day from meansrev_main.status_report(). You can
 also run it manually:
 
     python eval_checkpoint.py            # progress (N of 25) + checklist if reached

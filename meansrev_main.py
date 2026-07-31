@@ -1,27 +1,33 @@
 """
-main.py — Scheduler and main loop for the Mean Reversion Bot.
+meansrev_main.py — Scheduler and main loop for the Mean Reversion Bot.
 
 Daily schedule (all times Eastern):
   16:30 → Post-close scan:  evaluate entry/exit signals, queue actions
   09:25 → Pre-open execute: submit LOO limit orders (market fallback if unfilled by 9:45)
   09:45 → Fill confirm:     verify fills, place GTC hard stops, resolve exit orders
 
-Run with:  python main.py
+Run with:  python meansrev_main.py
 Logs to:   bot.log  (and stdout)
 
 To switch stop variants, change ACTIVE_STOP_MULT in config.py (1.5 or 2.5).
 """
 import json
 import logging
+import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from datetime import time as dt_time
 from pathlib import Path
 
 import schedule
 
+from quantcore.jobs import JobSpec, run_job
+from quantcore.single_instance import SingleInstance
+
 import config
 import eval_checkpoint
 import executor
+import exit_evidence
 import notifier
 import position_tracker as pt
 import scanner
@@ -38,6 +44,13 @@ logging.basicConfig(
     ],
 )
 logger = logging.getLogger(__name__)
+
+
+def _hhmm(value: str) -> tuple[int, int]:
+    """Split a "HH:MM" config time into (hour, minute)."""
+    hour, minute = value.split(":")
+    return int(hour), int(minute)
+
 
 # ── Pending Signal Queue ──────────────────────────────────────────────────────
 # Populated by post_close_scan(), consumed by pre_open_execute().
@@ -120,18 +133,35 @@ def post_close_scan():
     scan_results     = scanner.run_scan()
     open_positions   = executor.get_alpaca_positions()
 
-    # Detect hard stop exits: positions tracked as "open" that vanished from Alpaca
-    # must have been closed by the GTC stop during the session.
+    # Detect hard stop exits: positions tracked as "open" that vanished from
+    # Alpaca. "Vanished" is NOT the same as "stopped out" — a position is written
+    # to the tracker at order submission, so an entry that never filled looks
+    # identical. Booking one as a stop-out invented an $864.60 XLV loss on
+    # 2026-07-15, using the estimated stop price as if it were a fill.
+    # See exit_evidence for the rule: no close without proof of both legs.
     for symbol, pos_data in list(pt.all_positions().items()):
-        if pos_data.get("exit_status") == "open" and symbol not in open_positions:
-            exit_price = executor.get_last_fill_price(symbol, side="sell")
-            trade_log.log_closed_trade(
-                pos_data,
-                exit_price or pos_data["stop_price"],
-                "hard_stop",
-            )
+        if pos_data.get("exit_status") != "open" or symbol in open_positions:
+            continue
+
+        decision = exit_evidence.evaluate_vanished_position(
+            pos_data,
+            exit_fill_price=executor.get_last_fill_price(symbol, side="sell"),
+            entry_fill_qty=executor.get_filled_qty(symbol, side="buy"),
+        )
+
+        if decision.should_book:
+            trade_log.log_closed_trade(pos_data, decision.exit_price, "hard_stop")
             pt.remove(symbol)
             logger.info(f"  🛑 Hard stop exit detected and logged: {symbol}")
+        else:
+            # Keep the record so the daily reconciler keeps seeing it, and say
+            # plainly that nothing was written.
+            logger.error(
+                f"  ⚠️  {symbol} is gone from Alpaca but NO trade was logged: "
+                f"{decision.reason}"
+            )
+            pt.mark_needs_review(symbol, decision.reason)
+            notifier.send_review_needed(symbol, decision.reason)
 
     for symbol, result in scan_results.items():
         if result.get("error"):
@@ -283,6 +313,15 @@ def status_report():
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
+    lock = SingleInstance("meansrev-scheduler")
+    lock.__enter__()
+    if not lock.acquired:
+        logger.error(
+            "Another MeansRev scheduler is already running — refusing to start a "
+            "second one. Stop the other process first."
+        )
+        return 1
+
     logger.info("=" * 70)
     logger.info("MEAN REVERSION BOT — STARTING UP")
     logger.info(f"  Universe:         {config.SYMBOLS}")
@@ -320,10 +359,17 @@ def main():
 
     _load_pending()
 
-    schedule.every().day.at(config.SCAN_TIME).do(post_close_scan)
-    schedule.every().day.at(config.SCAN_TIME).do(status_report)
-    schedule.every().day.at(config.EXECUTE_TIME).do(pre_open_execute)
-    schedule.every().day.at(config.FILL_CONFIRM_TIME).do(fill_confirm)
+    # Scheduled through the shared harness rather than calling the job functions
+    # directly, so this loop and the Windows scheduled tasks cannot both do the
+    # same day's work. They share a per-job lock and a once-a-day completion
+    # marker: whichever fires first does it, and the other stands down. Without
+    # this, running the loop alongside the tasks would submit every order twice.
+    #
+    # The pending queue is already in memory here, so these must not reload it.
+    schedule.every().day.at(config.SCAN_TIME).do(_loop_job, "scan")
+    schedule.every().day.at(config.SCAN_TIME).do(_loop_job, "status")
+    schedule.every().day.at(config.EXECUTE_TIME).do(_loop_job, "execute")
+    schedule.every().day.at(config.FILL_CONFIRM_TIME).do(_loop_job, "confirm")
 
     logger.info("Scheduler running. Waiting for next event...")
 
@@ -348,5 +394,80 @@ def main():
         time.sleep(30)
 
 
+# ── Single-job entry points (for Windows Task Scheduler) ──────────────────────
+# Each job can be run on its own as a short-lived process, instead of relying on
+# a long-running loop being alive at the right minute. That reliance is what cost
+# us the XLV trade: a reboot at 08:47 on 2026-07-15 put the bot back up past its
+# 08:45 slot, and `schedule` moved that job to the next day rather than running it.
+#
+# max_lateness is per job, because "how late is still useful" differs:
+#   execute  — a limit-on-open order cannot be placed once the auction has gone
+#   confirm  — confirming fills and placing stops is worth doing all session
+#   scan     — queues actions for the next open, so it is useful into the evening
+
+_JOB_SPECS = {
+    "execute": JobSpec(bot="meansrev", name="execute",
+                       scheduled=dt_time(*_hhmm(config.EXECUTE_TIME)),
+                       max_lateness=timedelta(minutes=15)),
+    "confirm": JobSpec(bot="meansrev", name="confirm",
+                       scheduled=dt_time(*_hhmm(config.FILL_CONFIRM_TIME)),
+                       max_lateness=timedelta(hours=6)),
+    "scan":    JobSpec(bot="meansrev", name="scan",
+                       scheduled=dt_time(*_hhmm(config.SCAN_TIME)),
+                       max_lateness=timedelta(hours=4)),
+    "status":  JobSpec(bot="meansrev", name="status",
+                       scheduled=dt_time(*_hhmm(config.SCAN_TIME)),
+                       max_lateness=timedelta(hours=8)),
+}
+
+_JOB_WORK = {
+    "execute": lambda: pre_open_execute(),
+    "confirm": lambda: fill_confirm(),
+    "scan":    lambda: post_close_scan(),
+    "status":  lambda: status_report(),
+}
+
+
+def _loop_job(name: str, *, now=None) -> int:
+    """Run a job from inside the legacy loop, through the shared harness.
+
+    Deliberately does not reload the pending queue: the loop already holds it in
+    memory, and ``_load_pending`` extends rather than replaces, so reloading here
+    would duplicate every queued action.
+
+    ``now`` overrides the clock, for tests. Without it a test's result depends on
+    what time of day it happens to run.
+    """
+    return run_job(_JOB_SPECS[name], _JOB_WORK[name], now=now)
+
+
+def run_one_job(name: str, *, now=None) -> int:
+    """Run a single scheduled job and return a process exit code.
+
+    0 = did the work, or deliberately skipped it (market closed, or too late).
+    1 = it failed; the scheduler should retry and an alert has been sent.
+
+    Args:
+        name: One of :data:`_JOB_SPECS`.
+        now: Override the clock. Only used by tests — without it, every test
+            would depend on what time of day it was run.
+    """
+    # execute consumes what scan queued, so the queue has to be restored first.
+    _load_pending()
+    return run_job(_JOB_SPECS[name], _JOB_WORK[name], now=now)
+
+
 if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Mean Reversion bot. With no arguments, runs the built-in "
+                    "scheduler loop. With --job, runs one job and exits."
+    )
+    parser.add_argument("--job", choices=sorted(_JOB_SPECS),
+                        help="run a single job once, then exit")
+    args = parser.parse_args()
+
+    if args.job:
+        sys.exit(run_one_job(args.job))
     main()

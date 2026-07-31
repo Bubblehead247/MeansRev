@@ -1,126 +1,199 @@
-# Mean Reversion Bot — 16-ETF Universe
+# Mean Reversion Bot — Connors RSI(2) on 11 liquid ETFs
 
-Connors-style RSI(2) mean reversion system with multi-timeframe trend filtering and volume confirmation.
+Buy a short-term dip inside a long-term uptrend, then sell the bounce.
 
-## Trading Universe
+That is the whole idea. "Mean reversion" means betting that a price which has
+dropped unusually fast will snap back toward its recent average. RSI(2) is the
+measure of "unusually fast" — a 2-day Relative Strength Index, which runs from 0
+to 100 and only reaches single digits after a sharp drop. The 200-day moving
+average is the check that the drop is a dip in a rising market rather than the
+start of a fall.
 
-**Broad market (5):** SPY, QQQ, IWM, DIA, MDY
+> **`config.py` is the source of truth.** Every number below is read from it. If
+> the two ever disagree, the code is right and this file is stale.
 
-**SPDR Sector / XL family (11):** XLC, XLY, XLP, XLE, XLF, XLV, XLI, XLB, XLRE, XLK, XLU
+## Trading Universe — 11 ETFs
 
----
+| Group | Symbols |
+|---|---|
+| Broad index | SPY, QQQ, IWM, DIA |
+| Sector (SPDR) | XLE, XLF, XLK, XLV, XLU |
+| Commodity / bonds | GLD, TLT |
+
+ETFs rather than individual stocks, on purpose: they cannot go bankrupt or get
+delisted, so a backtest over them is not flattered by survivorship bias (the
+error of only testing on companies that happened to survive). All 11 are mapped
+to sectors in `sectors.py` for the `MAX_PER_SECTOR` cap.
 
 ## Strategy Logic
 
-**Entry (all four must be true on the same day):**
-- Weekly gate: close above SMA(50,W) AND SMA(200,W) — structural trend must be intact
-- Daily trend: close above SMA(50,D)
-- RSI signal: RSI(2) crossed back **above** 10 today (prior bar ≤ 10, current bar > 10) — bounce confirmed, not catching a falling knife
-- Volume spike: today's volume > 1.5× the 20-day average — institutional participation required
+**Entry — both must be true on the same day:**
 
-**Exit (first condition hit wins, in priority order):**
-- Hard stop: ATR-based GTC stop order on exchange — executes intraday, no bot required
-- Time stop: position held ≥ 7 calendar days → limit sell next open, market fallback by 09:45 ET
-- Weekly trend break: close drops below weekly SMA(200) → limit sell next open, market fallback by 09:45 ET
-- RSI target: RSI(2) crosses back below 70 (prior bar ≥ 70, current bar < 70) → limit sell next open, market fallback by 09:45 ET
+- **Trend gate:** close is **above** the 200-day SMA (`SMA_DAILY_TREND = 200`,
+  `USE_DAILY_SMA200_FILTER = True`). Only buy dips in a market that is rising.
+- **Dip signal:** **RSI(2) is below 10** (`RSI_ENTRY_THRESHOLD = 10.0`,
+  `ENTRY_MODE = "oversold"`). Note the direction: the bot buys *while* the
+  reading is still low, not after it recovers.
 
-**Order execution:**
-- Entries: LOO limit at prior close + 0.5% submitted at 09:25 ET; unfilled limits replaced with DAY market order at 09:45 ET
-- Exits: LOO limit at prior close − 0.5% submitted at 09:25 ET; unfilled limits replaced with DAY market sell at 09:45 ET
+Three further filters exist in the code and are all **switched off**. They are
+left in so they can be re-tested, and their values are still computed and logged:
 
-**Risk:**
-- 1% of account equity risked per trade (hard max — never exceeded)
-- Maximum 5 concurrent positions (5% total account risk cap)
-- Position size = floor( equity × 0.01 / stop_distance )
+| Filter | Setting | State | Why off |
+|---|---|---|---|
+| Weekly SMA(50)/SMA(200) gate | `USE_TREND_FILTER` | **off** | Superseded by the daily SMA200 gate |
+| Volume spike > 1.5× 20-day average | `USE_VOLUME_FILTER` | **off** | Removed ~90% of signals; 12-year return fell from +51% to +11% |
+| Weekly ADX band \[20, 25\) | `USE_REGIME_FILTER` | **off** | Promising but not statistically proven — bootstrap CI still includes zero |
 
-**Stop Variants (both logged, one executed):**
-- Stop A: 1.5 × ATR(14) below entry
-- Stop B: 2.5 × ATR(14) below entry
-- Toggle `ACTIVE_STOP_MULT` in config.py to switch which is executed
+**Exit — first condition hit wins:**
 
----
+1. **Hard stop** — a GTC stop order resting on Alpaca's servers at
+   `entry − 2.5 × ATR(14)`. It executes even if this bot is not running, which is
+   the point of putting it at the exchange rather than checking it here.
+2. **Time stop** — held 7 calendar days or more (`MAX_HOLD_DAYS = 7`).
+3. **RSI target** — RSI(2) crosses back **below** 70
+   (`RSI_EXIT_THRESHOLD = 70.0`). This is the bounce being taken.
+
+A fourth exit, weekly trend break, is tied to `USE_TREND_FILTER` and is therefore
+inactive.
+
+**Order execution.** Both entries and exits go out as limit-on-open (LOO) orders
+at 09:25 ET, priced 0.5% either side of the prior close
+(`ENTRY_LIMIT_PCT` / `EXIT_LIMIT_PCT = 0.005`). An LOO order only participates in
+the opening auction; if it does not fill there it expires, and at 09:45 ET the bot
+submits a plain DAY market order instead.
+
+> In practice the limit rarely fills — most orders go out as the market fallback.
+> See `LIMIT_ORDER_ANALYSIS.md`.
+
+**Risk.**
+
+- 1% of equity risked per trade (`RISK_PER_TRADE = 0.01`).
+- No position may exceed 20% of equity (`MAX_POSITION_PCT = 0.20`). This cap
+  binds often: the 1%-risk formula divides by the stop distance, so a low-volatility
+  ETF with a tight stop produces a very large share count without it.
+- At most 5 concurrent positions (`MAX_POSITIONS = 5`), and at most 2 in any one
+  sector (`MAX_PER_SECTOR = 2`).
+- Size = `floor(equity × 0.01 / stop_distance)`, then reduced to obey the 20% cap.
+
+**Stop variants.** `STOP_MULT_A = 1.5` and `STOP_MULT_B = 2.5` are both recorded
+for comparison; only `ACTIVE_STOP_MULT` (currently **2.5**) is actually traded.
 
 ## Setup
 
-### 1. Install dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. Set credentials
-Create `alpaca.env` in the project directory:
+Create `alpaca.env` in this directory:
+
 ```
 ALPACA_API_KEY=your_key
 ALPACA_SECRET_KEY=your_secret
 ```
 
-### 3. Configure
-Edit `config.py` to adjust:
-- `ACTIVE_STOP_MULT` — 1.5 or 2.5 (which stop variant to actually trade)
-- `PAPER` — True for paper, False for live
-- `SYMBOLS` — add/remove tickers
-- `RISK_PER_TRADE` — default 0.01 (1%)
-- `MAX_POSITIONS` — default 5 (max concurrent trades)
+`config.py` loads it by absolute path, so it is found no matter where you launch
+from. Note that `load_dotenv` does **not** override variables already set in your
+shell — an old `ALPACA_API_KEY` in your environment will silently win over this
+file. Check for one before debugging an authentication error.
 
-### 4. Run
+Then:
+
 ```bash
-python main.py
+py -3.14 meansrev_main.py
 ```
 
-The bot runs continuously and logs to both `bot.log` and stdout.
+Use the `py -3.14` selector. The shared `quantcore` package (indicators, and the
+blended fill-price helper this bot uses when an exit fills in pieces) is installed
+for 3.14 only. See `SETUP.md`.
 
----
+## Daily Schedule
 
-## Daily Schedule (Eastern Time)
+`config.py` holds these times in **US/Central**, which is Eastern minus one hour.
 
-| Time  | Job                  | Description                                                              |
-|-------|----------------------|--------------------------------------------------------------------------|
-| 16:30 | Post-close scan      | Evaluate all 16 symbols, queue entry/exit actions                        |
-| 09:25 | Pre-open execute     | Submit LOO limit orders (entries + exits) for next open                  |
-| 09:45 | Fill confirm + stops | Verify fills, place GTC hard stops; replace unfilled limits with market  |
+| Config value | Central | Eastern | Job |
+|---|---|---|---|
+| `SCAN_TIME` | 15:30 | 16:30 | Post-close scan — evaluate all 11 symbols, queue actions |
+| `EXECUTE_TIME` | 08:25 | 09:25 | Submit LOO orders for the next open |
+| `FILL_CONFIRM_TIME` | 08:45 | 09:45 | Confirm fills, place GTC stops, send market fallbacks |
 
----
+The 09:45 job is load-bearing and there is no catch-up pass: if the bot is not
+running at that minute, an entry from 09:25 goes unconfirmed and unstopped for the
+rest of the day. That is what happened on 2026-07-15.
+
+## Bookkeeping
+
+`trades.csv` is the record of closed trades and `positions.json` of open ones.
+Both are anchored to this directory, not the working directory.
+
+Two rules the bot now enforces, learned from a phantom trade that sat in the
+ledger for two weeks:
+
+- **A close is never booked without proof of both an entry fill and an exit
+  fill.** A position is written to `positions.json` when the order is *submitted*,
+  so "tracked but missing from Alpaca" does not mean "stopped out" — it can just
+  as easily mean the entry never filled. When the evidence is missing the position
+  is marked `needs_review` and nothing is written. See `exit_evidence.py`.
+- **A recorded price is always a real fill price.** When an exit fills in more
+  than one piece — common here, because a partial opening-auction fill plus a
+  market fallback is two fills — the trade is booked at the quantity-weighted
+  blend of them.
+
+To check the books against the broker:
+
+```bash
+py -3.14 -m quantcore.reconcile --bot meansrev
+```
+
+It exits non-zero if anything disagrees.
 
 ## File Structure
 
 ```
 MeansRev/
-├── config.py           # All tunable parameters — start here
-├── indicators.py       # RSI, SMA, ATR calculations (pure pandas)
-├── scanner.py          # Fetches daily + weekly bars, evaluates all signals
-├── risk.py             # Position sizing math
-├── position_tracker.py # JSON persistence for open position metadata
-├── executor.py         # All Alpaca API interactions and order logic
-├── main.py             # Scheduler and main loop
-├── trade_log.py        # Appends closed trades to trades.csv
-├── notifier.py         # ntfy.sh push alerts
-├── requirements.txt    # Python dependencies
-├── positions.json      # Auto-generated — tracks open positions
-├── trades.csv          # Auto-generated — closed trade history
-└── old_code/           # Previous version of all bot files
+├── config.py            # All tunable parameters — start here
+├── indicators.py        # Re-exports the shared quantcore indicators
+├── scanner.py           # Fetches bars, evaluates signals
+├── risk.py              # Position sizing
+├── position_tracker.py  # positions.json persistence
+├── executor.py          # All Alpaca interactions and order logic
+├── exit_evidence.py     # Whether a vanished position may be booked as closed
+├── meansrev_main.py     # Scheduler and job definitions
+├── trade_log.py         # Appends closed trades to trades.csv
+├── eval_checkpoint.py   # Counts closed trades toward the review checkpoint
+├── notifier.py          # ntfy.sh push alerts
+├── dashboard.py         # Local status view
+├── sectors.py           # Symbol → sector map for MAX_PER_SECTOR
+├── screener.py          # Standalone stock screener (does NOT affect live trading)
+├── backtest*.py         # Backtests and validation
+├── tests/               # pytest suite
+├── positions.json       # Auto-generated — open positions
+├── trades.csv           # Auto-generated — closed trades
+├── pending.json         # Auto-generated — queued actions between jobs
+└── old_code/            # Previous version of the bot
 ```
 
----
+## Tests
+
+```bash
+py -3.14 -m pytest
+```
 
 ## Comparing Stop Variants
 
-Both stop prices (1.5× and 2.5× ATR) are logged every day in `bot.log` for every position.
-To compare, grep the logs:
+Both stop prices are logged daily for every position:
 
 ```bash
 grep "Stop_A\|Stop_B" bot.log
 ```
 
-Run the bot for a full market cycle on each variant before drawing conclusions.
-The tighter stop (1.5×) will have more frequent stop-outs but smaller losses per stop.
-The wider stop (2.5×) will survive more washouts but take bigger hits when trend is genuinely breaking.
-
----
+Run a full market cycle on each before drawing conclusions. The tighter stop
+(1.5×) stops out more often for smaller losses; the wider stop (2.5×) survives
+more shakeouts but loses more when a trend genuinely breaks.
 
 ## Going Live
 
-1. Set `PAPER = False` in config.py
-2. Fund the Alpaca live account
-3. Update API keys to live keys
-4. Ensure the server running this bot is in US/Eastern timezone (or adjust schedule times)
-5. Verify the first few orders manually before leaving it unattended
+1. Set `PAPER = False` in `config.py`.
+2. Fund the Alpaca live account and swap in live keys.
+3. Times in `config.py` are US/Central — adjust if the host runs elsewhere.
+4. Watch the first few orders by hand before leaving it alone.
+5. Run the reconciler daily and treat a non-zero exit as something to look at.

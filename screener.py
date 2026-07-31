@@ -2,7 +2,7 @@
 screener.py — Standalone scan of all Alpaca US equities for sideways stocks.
 
 This tool is SEPARATE from the live bot. It does not place orders, does not
-touch scanner.run_scan(), and is never imported by main.py. It scans the whole
+touch scanner.run_scan(), and is never imported by meansrev_main.py. It scans the whole
 tradable universe and ranks names by a combined "sideways score" — how
 range-bound (low-trend), tight, and liquid a stock is.
 

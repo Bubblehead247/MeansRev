@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "alpaca": {
+      "command": "C:\\Users\\Cody\\.local\\bin\\alpaca-mcp-server.exe",
+      "args": [
+        "--transport",
+        "stdio",
+        "--env-file",
+        "C:\\Users\\Cody\\Claude\\MeansRev\\alpaca.env"
+      ]
+    }
+  }
+}

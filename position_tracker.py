@@ -9,13 +9,17 @@ Alpaca tracks shares, cost basis, and P&L. We track what Alpaca doesn't:
 """
 import json
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import config
 
 logger     = logging.getLogger(__name__)
-STATE_FILE = Path("positions.json")
+
+# Anchored to this file, not the working directory, matching the pattern meansrev_main.py
+# already uses for pending.json. A relative path meant launching from any other
+# directory read an empty tracker and re-entered every position.
+STATE_FILE = Path(__file__).resolve().parent / "positions.json"
 
 
 # ── I/O Helpers ───────────────────────────────────────────────────────────────
@@ -59,13 +63,15 @@ def add(
         "shares":                  shares,
         "stop_mult":               stop_mult,
         "stop_order_id":           stop_order_id,
-        "exit_status":             "open",          # "open" | "exit_pending"
+        "exit_status":             "open",          # "open" | "exit_pending" | "needs_review"
         "rsi2_at_signal":          rsi2,
         "sma200_weekly_at_signal": sma200_weekly,
         "sma50_daily_at_signal":   sma50_daily,
         "atr14_at_signal":         atr14,
         "entry_date":              date.today().isoformat(),
-        "opened_at":               datetime.utcnow().isoformat(),
+        # Timezone-aware UTC. datetime.utcnow() is deprecated in 3.12+ and
+        # produced a naive timestamp that read as local time to anything parsing it.
+        "opened_at":               datetime.now(timezone.utc).isoformat(),
     }
     _save(data)
     logger.info(
@@ -98,6 +104,28 @@ def get_exit_pending_symbols() -> list[str]:
     return [sym for sym, pos in _load().items() if pos.get("exit_status") == "exit_pending"]
 
 
+def mark_needs_review(symbol: str, reason: str = ""):
+    """Flag a position whose fate cannot be determined from the evidence.
+
+    Used when a tracked position is gone from Alpaca but there is no proof of
+    what happened to it. The record is deliberately kept rather than deleted, so
+    the position stays visible to the daily reconciler instead of disappearing
+    with a guessed price. The status change stops it being re-examined (and
+    re-alerted) every session.
+    """
+    data = _load()
+    if symbol in data:
+        data[symbol]["exit_status"] = "needs_review"
+        data[symbol]["review_reason"] = reason
+        _save(data)
+        logger.error(f"Position needs review: {symbol} | {reason}")
+
+
+def get_needs_review_symbols() -> list[str]:
+    """Return all symbols flagged for manual review."""
+    return [sym for sym, pos in _load().items() if pos.get("exit_status") == "needs_review"]
+
+
 def update_entry_price(symbol: str, actual_fill_price: float):
     """Update entry price to actual fill (vs. estimated previous close)."""
     data = _load()
@@ -105,6 +133,31 @@ def update_entry_price(symbol: str, actual_fill_price: float):
         data[symbol]["entry_price"] = actual_fill_price
         _save(data)
         logger.info(f"Entry price updated for {symbol}: ${actual_fill_price:.2f} (actual fill)")
+
+
+def update_stop_price(symbol: str, actual_stop_price: float):
+    """Update the tracked stop to the price actually resting at the exchange.
+
+    Without this the tracker keeps the *estimated* stop worked out before the
+    fill, while the exchange holds a different number. QQQ's real stop was
+    $653.21 while positions.json, the daily status message and trades.csv all
+    said $649.11.
+    """
+    data = _load()
+    if symbol in data:
+        data[symbol]["stop_price"] = actual_stop_price
+        _save(data)
+        logger.info(f"Stop price updated for {symbol}: ${actual_stop_price:.2f} (actual stop placed)")
+
+
+def update_shares(symbol: str, actual_shares: int):
+    """Update the tracked share count to what the broker actually filled."""
+    data = _load()
+    if symbol in data and data[symbol].get("shares") != actual_shares:
+        previous = data[symbol].get("shares")
+        data[symbol]["shares"] = actual_shares
+        _save(data)
+        logger.info(f"Share count updated for {symbol}: {previous} → {actual_shares} (actual fill)")
 
 
 def remove(symbol: str):

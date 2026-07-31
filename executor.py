@@ -25,6 +25,8 @@ from alpaca.trading.requests import (
 )
 from alpaca.trading.enums import OrderSide, QueryOrderStatus, TimeInForce
 
+from quantcore.reconcile import blended_fill_price
+
 import config
 import position_tracker as pt
 import risk
@@ -33,6 +35,13 @@ import trade_log
 logger = logging.getLogger(__name__)
 
 _client = TradingClient(config.API_KEY, config.SECRET_KEY, paper=config.PAPER)
+
+#: How many times to re-read a just-placed order looking for its fill, and how
+#: long to wait between tries. A DAY market order at 09:45 fills in well under a
+#: second; this only exists so an exit can be booked at its real price instead of
+#: a quote taken before the order was even sent.
+_FILL_POLL_TRIES = 5
+_FILL_POLL_SECONDS = 1.0
 
 
 # ── Account ───────────────────────────────────────────────────────────────────
@@ -210,10 +219,17 @@ def confirm_fills_and_place_stops():
             logger.warning(f"{symbol}: atr14_at_signal not found, using estimated stop ${actual_stop:.2f}")
 
         pt.update_entry_price(symbol, fill_price)
+        # Record what actually happened, not what was estimated before the fill:
+        # the real filled quantity, and — once the stop is accepted below — the
+        # real stop price. Leaving stop_price at its pre-fill estimate is what
+        # made positions.json, the daily status push and trades.csv all report a
+        # stop the exchange had never heard of.
+        pt.update_shares(symbol, shares)
 
         stop_order_id = _place_stop_order(symbol, actual_stop, shares)
         if stop_order_id:
             pt.update_stop_order_id(symbol, stop_order_id)
+            pt.update_stop_price(symbol, actual_stop)
             logger.info(
                 f"✅ Fill confirmed + stop placed | {symbol} | "
                 f"Fill=${fill_price:.2f} | Stop=${actual_stop:.2f} | "
@@ -242,12 +258,31 @@ def confirm_exit_fills():
     for symbol in exit_pending:
         if symbol not in alpaca_positions:
             pos_data   = pt.get(symbol)
-            exit_price = get_last_fill_price(symbol, side="sell")
             log_reason = (pos_data.get("exit_reason", "signal_exit") if pos_data else "signal_exit")
-            if pos_data and exit_price:
-                trade_log.log_closed_trade(pos_data, exit_price, log_reason)
-            logger.info(f"{symbol}: Exit fill confirmed. Removing from tracker.")
-            pt.remove(symbol)
+            # Blend every sell fill for the day, so an exit that filled in two
+            # pieces is booked at its true average rather than one of its prices.
+            fills = get_fills(symbol, side="sell")
+            filled_qty, blended_price = blended_fill_price(fills)
+
+            if pos_data and filled_qty > 0:
+                trade_log.log_closed_trade(
+                    pos_data, blended_price, log_reason, shares=filled_qty,
+                )
+                logger.info(f"{symbol}: Exit fill confirmed. Removing from tracker.")
+                pt.remove(symbol)
+            else:
+                # The old code removed the record here regardless, so a real exit
+                # whose fill could not be read vanished with no row in trades.csv
+                # at all. Keep it and say so instead.
+                logger.error(
+                    f"{symbol}: gone from Alpaca but no sell fill could be read — "
+                    f"NOT booking a trade and NOT dropping the record. Flagged for review."
+                )
+                pt.mark_needs_review(
+                    symbol,
+                    "position disappeared while an exit was pending, but no sell "
+                    "fill was found to price it",
+                )
             continue
 
         try:
@@ -286,13 +321,44 @@ def confirm_exit_fills():
                 f"🔄 FALLBACK SELL submitted | {symbol} | {shares} shares | "
                 f"Order ID={fallback.id}"
             )
-            if pos_data:
-                fallback_price = float(
-                    alpaca_positions[symbol].current_price
-                    or alpaca_positions[symbol].avg_entry_price
+
+            # Wait for the order to actually fill. The old code booked the trade
+            # from `current_price` — the position's mark at ~09:45, taken before
+            # the order was even sent — and then deleted the tracker record, so
+            # the real fill could never be reconciled. Every *_fallback row in
+            # trades.csv was an estimate rather than a realized price.
+            if await_fill(str(fallback.id)) is None:
+                logger.error(
+                    f"{symbol}: fallback sell {fallback.id} has not filled yet. "
+                    f"Leaving as exit_pending — nothing booked, no price guessed."
                 )
+                continue
+
+            # Blend every sell fill for today, not just this order. The exit may
+            # have filled in two pieces: a partial fill in the opening auction
+            # (whose order then expired) plus this market fallback. DIA on
+            # 2026-07-28 filled 21 @ 525.53 and 19 @ 524.391052 — a blended
+            # 524.9890 across 40 shares, which the old code recorded as a single
+            # price on all 40, understating the trade by about $22.
+            fills = get_fills(symbol, side="sell")
+            filled_qty, blended_price = blended_fill_price(fills)
+            if filled_qty <= 0:
+                logger.error(
+                    f"{symbol}: sell filled but no fill record could be read. "
+                    f"Leaving as exit_pending rather than guessing a price."
+                )
+                continue
+
+            if pos_data:
                 log_reason = pos_data.get("exit_reason", "signal_exit") + "_fallback"
-                trade_log.log_closed_trade(pos_data, fallback_price, log_reason)
+                if len(fills) > 1:
+                    logger.info(
+                        f"{symbol}: exit filled in {len(fills)} pieces totalling "
+                        f"{filled_qty:g} shares, blended ${blended_price:.4f}."
+                    )
+                trade_log.log_closed_trade(
+                    pos_data, blended_price, log_reason, shares=filled_qty,
+                )
             pt.remove(symbol)
         except Exception as e:
             logger.error(f"Fallback exit order failed for {symbol}: {e}", exc_info=True)
@@ -312,6 +378,107 @@ def get_last_fill_price(symbol: str, side: str) -> float | None:
     except Exception as e:
         logger.error(f"Could not fetch fill price for {symbol} ({side}): {e}", exc_info=True)
     return None
+
+
+def get_fills(symbol: str, side: str, on_date: date | None = None) -> list[dict]:
+    """Every fill for symbol on the given side, as plain dicts.
+
+    Includes fills carried by orders that did **not** end as ``filled``: an
+    Alpaca order can expire or be canceled having already filled part of its
+    quantity. DIA's opening-auction sell on 2026-07-28 expired holding 21 of its
+    40 shares, and ignoring it is what understated that trade by about $22.
+
+    Args:
+        symbol: Ticker.
+        side: ``"buy"`` or ``"sell"``.
+        on_date: Only fills from this date. Defaults to today.
+
+    Returns:
+        Dicts with ``filled_qty``/``filled_avg_price``, ready for
+        :func:`quantcore.reconcile.blended_fill_price`.
+    """
+    want_date = on_date or date.today()
+    try:
+        orders = _client.get_orders(
+            GetOrdersRequest(status=QueryOrderStatus.ALL, symbols=[symbol], limit=50)
+        )
+    except Exception as e:
+        logger.error(f"Could not fetch fills for {symbol} ({side}): {e}", exc_info=True)
+        return []
+
+    out = []
+    for order in orders:
+        if str(order.side).lower() != side.lower():
+            continue
+        filled_qty = getattr(order, "filled_qty", None)
+        filled_price = getattr(order, "filled_avg_price", None)
+        if not filled_qty or not filled_price:
+            continue
+        when = getattr(order, "filled_at", None) or getattr(order, "updated_at", None)
+        if when is not None and when.date() != want_date:
+            continue
+        out.append({
+            "id": str(order.id),
+            "symbol": symbol,
+            "side": side.lower(),
+            "filled_qty": str(filled_qty),
+            "filled_avg_price": str(filled_price),
+            "status": str(getattr(order, "status", "")),
+        })
+    return out
+
+
+def await_fill(order_id: str, tries: int = _FILL_POLL_TRIES) -> tuple[float, float] | None:
+    """Wait briefly for an order to fill, and return ``(qty, price)``.
+
+    Returns ``None`` if it has not filled in time. The caller must then leave the
+    position alone rather than booking a guessed price — a market order at 09:45
+    normally fills in well under a second, so not filling is real news.
+    """
+    for attempt in range(tries):
+        try:
+            order = _client.get_order_by_id(order_id)
+        except Exception as e:
+            logger.error(f"Could not re-read order {order_id}: {e}", exc_info=True)
+            return None
+        qty = getattr(order, "filled_qty", None)
+        price = getattr(order, "filled_avg_price", None)
+        if qty and price and float(qty) > 0:
+            return float(qty), float(price)
+        status = str(getattr(order, "status", "")).lower()
+        if any(dead in status for dead in ("canceled", "expired", "rejected")):
+            logger.warning(f"Order {order_id} ended {status} without filling.")
+            return None
+        if attempt < tries - 1:
+            time.sleep(_FILL_POLL_SECONDS)
+    return None
+
+
+def get_filled_qty(symbol: str, side: str) -> float | None:
+    """Total shares the broker actually filled for symbol on the given side.
+
+    Counts every order that moved shares, whatever its final status: an order
+    can end ``expired`` or ``canceled`` and still have filled part of its
+    quantity. Returns ``0.0`` when orders exist but none of them filled — which
+    is proof that nothing was traded — and ``None`` only when the lookup itself
+    failed, so "no evidence" is never confused with "evidence of nothing".
+    """
+    try:
+        orders = _client.get_orders(
+            GetOrdersRequest(status=QueryOrderStatus.ALL, symbols=[symbol], limit=50)
+        )
+    except Exception as e:
+        logger.error(f"Could not fetch orders for {symbol} ({side}): {e}", exc_info=True)
+        return None
+
+    total = 0.0
+    for order in orders:
+        if str(order.side).lower() != side.lower():
+            continue
+        filled = getattr(order, "filled_qty", None)
+        if filled:
+            total += float(filled)
+    return total
 
 
 def _place_stop_order(symbol: str, stop_price: float, shares: int) -> str | None:

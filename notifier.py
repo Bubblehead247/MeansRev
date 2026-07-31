@@ -59,6 +59,32 @@ def send_checkpoint(new_trades: int, target: int):
         logger.warning(f"ntfy checkpoint alert failed: {e}")
 
 
+def send_review_needed(symbol: str, reason: str):
+    """Push alert when a position's fate cannot be determined from the evidence.
+
+    High priority on purpose: this means the books and the broker disagree, and
+    the bot has deliberately refused to guess a price to paper over it.
+    """
+    try:
+        requests.post(
+            "https://ntfy.sh",
+            json={
+                "topic":    config.NTFY_TOPIC,
+                "title":    f"⚠️ NEEDS REVIEW: {symbol}",
+                "message":  (
+                    f"{symbol} is gone from Alpaca but no closed trade was booked. "
+                    f"{reason} Nothing was written to trades.csv — check the "
+                    f"broker and settle it by hand."
+                ),
+                "priority": 5,
+                "tags":     ["warning"],
+            },
+            timeout=5,
+        )
+    except Exception as e:
+        logger.warning(f"ntfy review alert failed for {symbol}: {e}")
+
+
 def send_error(detail: str):
     """Push alert when a scheduled job fails and the bot enters retry mode."""
     try:

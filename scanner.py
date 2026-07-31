@@ -16,7 +16,7 @@ Entry (ALL must pass):
 Exit (first triggered wins, checked in this priority order):
   Weekly break:  Close < SMA(200,W)  — structural trend broken        [High]
   RSI target:    RSI(2) crossed back BELOW 70 (prev >= 70, now < 70)  [Standard]
-  Time stop:     Position held >= 7 calendar days                     [Standard] (checked in main.py)
+  Time stop:     Position held >= 7 calendar days                     [Standard] (checked in meansrev_main.py)
   Hard stop:     ATR-based GTC order on exchange                      [Highest]  (handled by Alpaca)
 """
 import logging

@@ -11,7 +11,12 @@ from datetime import date
 from pathlib import Path
 
 logger   = logging.getLogger(__name__)
-CSV_FILE = Path("trades.csv")
+
+# Anchored to this file, not the working directory. Launched from anywhere else,
+# a relative path silently starts a second, empty ledger — and eval_checkpoint.py
+# already resolves trades.csv absolutely, so the writer and the trade-count gate
+# would end up reading different files.
+CSV_FILE = Path(__file__).resolve().parent / "trades.csv"
 
 HEADERS = [
     "symbol", "entry_date", "entry_price", "shares",
@@ -22,18 +27,25 @@ HEADERS = [
 ]
 
 
-def log_closed_trade(pos_data: dict, exit_price: float, exit_reason: str):
+def log_closed_trade(pos_data: dict, exit_price: float, exit_reason: str,
+                     shares: float | None = None):
     """
     Append a closed-trade row to trades.csv.
 
     Args:
         pos_data:    Position dict from position_tracker.
-        exit_price:  Actual fill price of the closing order.
+        exit_price:  Actual fill price of the closing order. When the exit filled
+                     in more than one piece this must be the quantity-weighted
+                     blend of those fills, never one of them.
         exit_reason: One of: rsi_exit, weekly_trend_break, time_stop, hard_stop,
                      exit_pending_retry, or *_fallback variants.
+        shares:      Shares actually closed, when it differs from the tracked
+                     count. Pass this whenever the broker is the authority: a DIA
+                     exit was booked as 40 shares at one price when it really
+                     filled 21 and then 19 at different prices.
     """
     entry_price = pos_data["entry_price"]
-    shares      = pos_data["shares"]
+    shares      = pos_data["shares"] if shares is None else shares
     entry_date  = date.fromisoformat(pos_data["entry_date"])
     exit_date   = date.today()
 

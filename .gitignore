@@ -26,3 +26,6 @@ _grid_mtf_cache.pkl
 grid_run*.out
 .claude/
 backtest_wf_sweep.csv
+
+# Dated backups taken before data repairs (keep locally, never commit)
+*.bak-*
