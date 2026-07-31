@@ -7,8 +7,13 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-# Load credentials from alpaca.env in the same directory as this file
-load_dotenv(Path(__file__).resolve().parent / "alpaca.env")
+# Load credentials from alpaca.env in the same directory as this file.
+#
+# override=True makes this file authoritative over the ambient OS environment.
+# Without it a variable already set at the OS level silently shadows the bot's
+# own value — this machine has a user-level NTFY_TOPIC from an unrelated project,
+# which sent MeansRev's alerts to the wrong topic.
+load_dotenv(Path(__file__).resolve().parent / "alpaca.env", override=True)
 
 # ── Alpaca Credentials ────────────────────────────────────────────────────────
 API_KEY    = os.getenv("ALPACA_API_KEY", "YOUR_KEY_HERE")
@@ -123,7 +128,12 @@ SCREEN_BARS_CHUNK        = 100          # Symbols per bars request (Stage 2)
 SCREEN_RESULTS_CSV       = "screener_results.csv"
 
 # ── ntfy.sh Push Alerts ───────────────────────────────────────────────────────
-NTFY_TOPIC = "MeansRevRSI"  # ntfy.sh topic — subscribe to this in the ntfy app
+# The topic comes from alpaca.env, never from this file. ntfy.sh is public and
+# unauthenticated, so the topic name *is* the credential: anyone holding it can
+# read every trade alert and publish forged ones. It was committed here in
+# plaintext until 2026-07-30. Unset means alerts are off, which is better than a
+# default that would be published in this file all over again.
+NTFY_TOPIC = os.getenv("NTFY_TOPIC", "").strip()
 
 # ── Exit Rules ────────────────────────────────────────────────────────────────
 MAX_HOLD_DAYS = 7            # Time stop: force exit if trade is still open after 7 days
@@ -134,3 +144,7 @@ MAX_PER_SECTOR = 2           # Max concurrent positions in any one sector (see s
 SCAN_TIME         = "15:30"  # Post-close scan       (4:30 PM ET)
 EXECUTE_TIME      = "08:25"  # Pre-open order submit (9:25 AM ET)
 FILL_CONFIRM_TIME = "08:45"  # Fill confirm + stops  (9:45 AM ET)
+# Second confirm pass, 10 minutes before the close. Entries are DAY limits that
+# stay live all session, so one filling late morning would otherwise sit without
+# a hard stop until tomorrow. This pass also cancels anything still unfilled.
+FINAL_CONFIRM_TIME = "14:50"  # Pre-close confirm     (3:50 PM ET)

@@ -105,7 +105,14 @@ def submit_entry(scan_result: dict) -> bool:
                 symbol=symbol,
                 qty=shares,
                 side=OrderSide.BUY,
-                time_in_force=TimeInForce.OPG,  # LOO — Limit on Open
+                # DAY, not OPG. Auction-only orders got one chance at the open
+                # and 8 of 9 produced no usable fill — four gapped through the
+                # limit, and five had the open comfortably inside the limit and
+                # still did not fill, which is not a pricing problem at all. A
+                # DAY limit keeps the same price discipline but stays live for
+                # the whole session, so a stock that pulls back later in the
+                # morning still gets bought. (bot-review D5, option B)
+                time_in_force=TimeInForce.DAY,
                 limit_price=limit_price,
             )
         )
@@ -138,15 +145,27 @@ def submit_entry(scan_result: dict) -> bool:
 
 # ── Fill Confirmation + Hard Stop Placement ───────────────────────────────────
 
-def confirm_fills_and_place_stops():
+def confirm_fills_and_place_stops(final: bool = False):
     """
-    Run ~15 minutes after open to:
-      1. Confirm LOO buy orders have been filled.
+    Confirm entry fills and protect them:
+      1. Confirm entry buy orders have been filled.
       2. Calculate stop from ACTUAL fill price using ATR at signal time.
       3. Place a GTC hard stop on the exchange.
 
-    If the LOO expired unfilled, submits a DAY market buy as fallback so the
-    position still opens (avoids missing a move just because of a tight LOO limit).
+    Runs twice a day, because entries are DAY limits that stay live for the whole
+    session (see ``submit_entry``):
+
+    * ``final=False`` — the morning pass. A still-open entry order is normal; it
+      is left working and picked up later.
+    * ``final=True``  — the pre-close pass. Anything still open now will expire
+      at the close, so it is cancelled and its tracker record removed. Without
+      this the record survives to tomorrow, when the next morning's pass would
+      see "no position, no open order" and buy a day-old signal at market.
+
+    An entry that never fills is a trade not taken, which is the point of having
+    a limit. There is no market fallback: the old one existed because an OPG
+    order was dead by 09:45, and chasing at market is what the price discipline
+    is there to avoid.
     """
     logger.info("Confirming fills and placing hard stops...")
 
@@ -169,39 +188,33 @@ def confirm_fills_and_place_stops():
                 logger.error(f"Could not check open orders for {symbol}: {e}", exc_info=True)
                 open_buys = []
 
-            if open_buys:
+            if open_buys and not final:
                 logger.info(
-                    f"{symbol}: LOO order still pending (ID={open_buys[0].id}). "
-                    f"Skipping — will retry at next confirm cycle."
+                    f"{symbol}: entry limit still working (ID={open_buys[0].id}). "
+                    f"Leaving it — a DAY limit has the whole session to fill."
                 )
                 continue
 
-            # LOO expired unfilled — submit market DAY buy as fallback so we don't miss the trade
-            shares = pos_data.get("shares", 0)
-            if shares > 0:
-                logger.warning(
-                    f"{symbol}: LOO entry expired unfilled. "
-                    f"Submitting fallback DAY market buy for {shares} shares..."
-                )
-                try:
-                    fallback = _client.submit_order(
-                        MarketOrderRequest(
-                            symbol=symbol,
-                            qty=shares,
-                            side=OrderSide.BUY,
-                            time_in_force=TimeInForce.DAY,
+            if open_buys:  # final pass: it will expire at the close anyway
+                for order in open_buys:
+                    try:
+                        _client.cancel_order_by_id(order.id)
+                        logger.info(
+                            f"{symbol}: entry limit unfilled at the close — "
+                            f"cancelled (ID={order.id}). Trade not taken."
                         )
-                    )
-                    logger.info(
-                        f"🔄 FALLBACK BUY submitted | {symbol} | {shares} shares | "
-                        f"Order ID={fallback.id}"
-                    )
-                except Exception as e:
-                    logger.error(f"Fallback buy failed for {symbol}: {e}", exc_info=True)
-                    pt.remove(symbol)
-            else:
-                logger.warning(f"{symbol}: LOO expired, no shares recorded — removing tracker record.")
+                    except Exception as e:
+                        logger.error(f"Could not cancel {symbol} entry: {e}", exc_info=True)
                 pt.remove(symbol)
+                continue
+
+            # No position and no working order: the order was rejected, cancelled
+            # or expired. The signal was for today's open, so it is stale now.
+            logger.warning(
+                f"{symbol}: no position and no working entry order — "
+                f"removing tracker record. Trade not taken."
+            )
+            pt.remove(symbol)
             continue
 
         # Position is open — calculate stop from actual fill price
