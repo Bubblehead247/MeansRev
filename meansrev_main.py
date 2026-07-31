@@ -269,16 +269,21 @@ def pre_open_execute():
     logger.info("▶  PRE-OPEN EXECUTE COMPLETE")
 
 
-def fill_confirm():
+def fill_confirm(final: bool = False):
     """
-    09:45 ET — Confirm fills, place hard stops, and resolve pending exits.
-    LOO orders unfilled by this point get replaced with DAY market orders.
+    Confirm fills, place hard stops, and resolve pending exits.
+
+    Runs twice: 09:45 ET, and again shortly before the close. Entries are DAY
+    limits that stay live all session, so one that fills at 11:00 has no stop
+    until a later pass sees it — the second run is what closes that window. The
+    final pass also cancels anything still unfilled, since it would otherwise
+    expire at the close and leave a stale tracker record behind.
     """
     if _skip_if_closed("FILL CONFIRM"):
         return
 
-    logger.info("▶  FILL CONFIRMATION + STOP PLACEMENT")
-    executor.confirm_fills_and_place_stops()
+    logger.info("▶  FILL CONFIRMATION + STOP PLACEMENT" + ("  (final pass)" if final else ""))
+    executor.confirm_fills_and_place_stops(final=final)
     executor.confirm_exit_fills()
 
 
@@ -370,6 +375,7 @@ def main():
     schedule.every().day.at(config.SCAN_TIME).do(_loop_job, "status")
     schedule.every().day.at(config.EXECUTE_TIME).do(_loop_job, "execute")
     schedule.every().day.at(config.FILL_CONFIRM_TIME).do(_loop_job, "confirm")
+    schedule.every().day.at(config.FINAL_CONFIRM_TIME).do(_loop_job, "confirm-final")
 
     logger.info("Scheduler running. Waiting for next event...")
 
@@ -412,6 +418,11 @@ _JOB_SPECS = {
     "confirm": JobSpec(bot="meansrev", name="confirm",
                        scheduled=dt_time(*_hhmm(config.FILL_CONFIRM_TIME)),
                        max_lateness=timedelta(hours=6)),
+    # The final pass must happen before the close or it cannot cancel anything,
+    # so it is worth much less late — unlike the morning confirm.
+    "confirm-final": JobSpec(bot="meansrev", name="confirm-final",
+                             scheduled=dt_time(*_hhmm(config.FINAL_CONFIRM_TIME)),
+                             max_lateness=timedelta(minutes=10)),
     "scan":    JobSpec(bot="meansrev", name="scan",
                        scheduled=dt_time(*_hhmm(config.SCAN_TIME)),
                        max_lateness=timedelta(hours=4)),
@@ -423,6 +434,7 @@ _JOB_SPECS = {
 _JOB_WORK = {
     "execute": lambda: pre_open_execute(),
     "confirm": lambda: fill_confirm(),
+    "confirm-final": lambda: fill_confirm(final=True),
     "scan":    lambda: post_close_scan(),
     "status":  lambda: status_report(),
 }

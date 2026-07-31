@@ -48,8 +48,14 @@ def _no_alerts(monkeypatch):
 
 
 def test_every_scheduled_job_has_a_cli_entry_point():
-    """All four jobs the loop runs must be runnable standalone."""
-    assert set(main._JOB_SPECS) == {"scan", "execute", "confirm", "status"}
+    """Every job the loop runs must be runnable standalone.
+
+    ``confirm-final`` joined the list with the move to DAY limit entries: they
+    stay live all session, so a second pass before the close places the stop on
+    anything that filled late and cancels whatever did not fill.
+    """
+    assert set(main._JOB_SPECS) == {
+        "scan", "execute", "confirm", "confirm-final", "status"}
     assert set(main._JOB_WORK) == set(main._JOB_SPECS)
 
 
@@ -198,3 +204,50 @@ def test_the_loop_does_not_reload_the_pending_queue(monkeypatch):
 
     main._loop_job("execute", now=datetime(2026, 7, 30, 8, 25))
     assert loads == [], "the loop reloaded a queue it already holds"
+
+
+# --------------------------------------------------------------------------
+# O5 — the ntfy topic is a credential, not a constant
+# --------------------------------------------------------------------------
+
+
+def test_the_ntfy_topic_is_not_hardcoded():
+    """ntfy.sh is public and unauthenticated: the topic name IS the credential.
+
+    It sat in config.py in plaintext until 2026-07-30, so anyone with the repo
+    could read every trade alert and publish forged ones.
+    """
+    from pathlib import Path
+
+    source = Path(__file__).resolve().parents[1] / "config.py"
+    text = source.read_text(encoding="utf-8")
+
+    assert 'NTFY_TOPIC = "MeansRevRSI"' not in text
+    assert 'os.getenv("NTFY_TOPIC"' in text
+
+
+def test_no_topic_configured_sends_nothing(monkeypatch):
+    """Better silent than falling back to a topic published in the repo."""
+    import config
+    import notifier
+
+    monkeypatch.setattr(config, "NTFY_TOPIC", "")
+    sent = []
+    monkeypatch.setattr(notifier.requests, "post", lambda *a, **k: sent.append(1))
+
+    notifier.send_signal("SPY", 8.0)
+    notifier.send_error("boom")
+
+    assert sent == [], "posted somewhere with no topic configured"
+
+
+def test_the_env_file_beats_an_ambient_variable():
+    """This machine has a user-level NTFY_TOPIC=WeeklyAI from another project.
+
+    `load_dotenv()` does not override an existing OS variable, so without
+    override=True that stray value silently captured MeansRev's alerts.
+    """
+    from pathlib import Path
+
+    source = Path(__file__).resolve().parents[1] / "config.py"
+    assert "override=True" in source.read_text(encoding="utf-8")

@@ -16,47 +16,54 @@ import config
 logger = logging.getLogger(__name__)
 
 
-def send_warning(symbol: str, rsi_value: float):
-    """Fire a push alert when RSI(2) enters the 10–20 warming zone."""
+def _push(what: str, title: str, message: str, priority: int, tags: list[str]):
+    """Send one alert. Every alert goes through here, for two reasons.
+
+    The topic is read at call time from ``config.NTFY_TOPIC``, which comes from
+    the environment. With no topic set there is nowhere to publish, so alerts are
+    off — checking that in one place means a new alert cannot forget to.
+
+    Fire-and-forget: ntfy being unreachable must never interrupt trading.
+    """
+    if not config.NTFY_TOPIC:
+        logger.debug(f"ntfy {what} alert skipped: no NTFY_TOPIC configured.")
+        return
     try:
         requests.post(
             "https://ntfy.sh",
             json={
                 "topic":    config.NTFY_TOPIC,
-                "title":    f"⚠️ WARMING UP: {symbol}",
-                "message":  (
-                    f"{symbol} RSI(2) = {rsi_value:.1f} — approaching entry zone. "
-                    f"Watch for ≤10."
-                ),
-                "priority": 3,
-                "tags":     ["chart_with_upwards_trend"],
+                "title":    title,
+                "message":  message,
+                "priority": priority,
+                "tags":     tags,
             },
             timeout=5,
         )
     except Exception as e:
-        logger.warning(f"ntfy warning alert failed for {symbol}: {e}")
+        logger.warning(f"ntfy {what} alert failed: {e}")
+
+
+def send_warning(symbol: str, rsi_value: float):
+    """Fire a push alert when RSI(2) enters the 10–20 warming zone."""
+    _push(
+        f"warning ({symbol})",
+        f"⚠️ WARMING UP: {symbol}",
+        f"{symbol} RSI(2) = {rsi_value:.1f} — approaching entry zone. Watch for ≤10.",
+        3, ["chart_with_upwards_trend"],
+    )
 
 
 def send_checkpoint(new_trades: int, target: int):
     """One-time push when the paper-trading evaluation checkpoint is reached."""
-    try:
-        requests.post(
-            "https://ntfy.sh",
-            json={
-                "topic":    config.NTFY_TOPIC,
-                "title":    "\U0001f4ca EVAL CHECKPOINT",
-                "message":  (
-                    f"{new_trades} closed trades since v1.4 go-live (target {target}). "
-                    f"Review execution fidelity: fills/slippage, stops, signal match, "
-                    f"win~68%/hold~3-4d, drawdown <25%. Run: python eval_checkpoint.py"
-                ),
-                "priority": 4,
-                "tags":     ["bar_chart"],
-            },
-            timeout=5,
-        )
-    except Exception as e:
-        logger.warning(f"ntfy checkpoint alert failed: {e}")
+    _push(
+        "checkpoint",
+        "\U0001f4ca EVAL CHECKPOINT",
+        f"{new_trades} closed trades since v1.4 go-live (target {target}). "
+        f"Review execution fidelity: fills/slippage, stops, signal match, "
+        f"win~68%/hold~3-4d, drawdown <25%. Run: python eval_checkpoint.py",
+        4, ["bar_chart"],
+    )
 
 
 def send_review_needed(symbol: str, reason: str):
@@ -65,60 +72,31 @@ def send_review_needed(symbol: str, reason: str):
     High priority on purpose: this means the books and the broker disagree, and
     the bot has deliberately refused to guess a price to paper over it.
     """
-    try:
-        requests.post(
-            "https://ntfy.sh",
-            json={
-                "topic":    config.NTFY_TOPIC,
-                "title":    f"⚠️ NEEDS REVIEW: {symbol}",
-                "message":  (
-                    f"{symbol} is gone from Alpaca but no closed trade was booked. "
-                    f"{reason} Nothing was written to trades.csv — check the "
-                    f"broker and settle it by hand."
-                ),
-                "priority": 5,
-                "tags":     ["warning"],
-            },
-            timeout=5,
-        )
-    except Exception as e:
-        logger.warning(f"ntfy review alert failed for {symbol}: {e}")
+    _push(
+        f"review ({symbol})",
+        f"⚠️ NEEDS REVIEW: {symbol}",
+        f"{symbol} is gone from Alpaca but no closed trade was booked. {reason} "
+        f"Nothing was written to trades.csv — check the broker and settle it by hand.",
+        5, ["warning"],
+    )
 
 
 def send_error(detail: str):
     """Push alert when a scheduled job fails and the bot enters retry mode."""
-    try:
-        requests.post(
-            "https://ntfy.sh",
-            json={
-                "topic":    config.NTFY_TOPIC,
-                "title":    "❌ BOT JOB FAILED",
-                "message":  f"A scheduled job raised an error — retrying every 30s. {detail}",
-                "priority": 4,
-                "tags":     ["x"],
-            },
-            timeout=5,
-        )
-    except Exception as e:
-        logger.warning(f"ntfy error alert failed: {e}")
+    _push(
+        "error",
+        "❌ BOT JOB FAILED",
+        f"A scheduled job raised an error — retrying every 30s. {detail}",
+        4, ["x"],
+    )
 
 
 def send_signal(symbol: str, rsi_value: float):
     """Fire a high-priority push alert when a live entry signal fires."""
-    try:
-        requests.post(
-            "https://ntfy.sh",
-            json={
-                "topic":    config.NTFY_TOPIC,
-                "title":    f"\U0001f6a8 SIGNAL: {symbol}",
-                "message":  (
-                    f"{symbol} RSI(2) = {rsi_value:.1f} — ENTRY SIGNAL FIRED. "
-                    f"Bot has queued a trade."
-                ),
-                "priority": 5,
-                "tags":     ["rotating_light"],
-            },
-            timeout=5,
-        )
-    except Exception as e:
-        logger.warning(f"ntfy signal alert failed for {symbol}: {e}")
+    _push(
+        f"signal ({symbol})",
+        f"\U0001f6a8 SIGNAL: {symbol}",
+        f"{symbol} RSI(2) = {rsi_value:.1f} — ENTRY SIGNAL FIRED. "
+        f"Bot has queued a trade.",
+        5, ["rotating_light"],
+    )

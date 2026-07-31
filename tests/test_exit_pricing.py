@@ -43,14 +43,6 @@ class _FakeOrder:
         self.updated_at = self.filled_at
 
 
-@pytest.fixture
-def isolated_state(tmp_path, monkeypatch):
-    """Point the tracker and the CSV at a temp directory."""
-    monkeypatch.setattr(pt, "STATE_FILE", tmp_path / "positions.json")
-    monkeypatch.setattr(trade_log, "CSV_FILE", tmp_path / "trades.csv")
-    return tmp_path
-
-
 def _dia_position() -> dict:
     """DIA as positions.json held it before the 2026-07-28 exit."""
     return {
