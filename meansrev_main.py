@@ -63,6 +63,10 @@ _pending: list[dict] = []
 PENDING_FILE         = Path(__file__).resolve().parent / "pending.json"
 PENDING_MAX_AGE_DAYS = 5  # Discard a restored queue older than this — signals are stale.
 
+#: Smallest book size worth a "the whole book is exiting" alert. See
+#: :func:`_check_for_mass_exit` for why this is 3 and not 2.
+MASS_EXIT_MIN_POSITIONS = 3
+
 
 def _json_scalar(o):
     """JSON fallback for numpy scalars coming out of pandas indicators."""
@@ -115,6 +119,113 @@ def _load_pending():
             )
     except Exception as e:
         logger.error(f"Failed to restore pending.json: {e}", exc_info=True)
+
+
+# ── Queue Receipts ────────────────────────────────────────────────────────────
+# `pending.json` is the working queue: the scan overwrites it, the execute drains
+# it. That makes it useless as evidence, because the state you want to inspect
+# after something goes wrong is exactly the state it has already replaced.
+#
+# On 2026-07-31 the scan queued an XLF exit. On 2026-08-03 the pre-open execute
+# logged "No pending actions" and the position ran to 10 days against a 7-day
+# time stop. Nothing reported it, and by the time it was noticed the file had
+# been rewritten twice, so why the queue was empty could no longer be
+# established from disk.
+#
+# This is the append-only record that was missing: what the scan queued, what the
+# execute actually sent, and when the execute found nothing to send. It is never
+# rewritten in place, only appended to, so no later run can erase the evidence of
+# an earlier one.
+
+QUEUE_LOG_FILE = Path(__file__).resolve().parent / "queue_log.jsonl"
+
+
+def _append_queue_event(event: str, **fields) -> None:
+    """Append one line to the queue receipt log. Never raises.
+
+    Bookkeeping must not be able to stop the bot trading, so a failure here is
+    logged and swallowed. The cost is a blind spot in the receipts, which is what
+    we had before this existed anyway.
+    """
+    try:
+        record = {"ts": datetime.now(timezone.utc).isoformat(), "event": event, **fields}
+        with open(QUEUE_LOG_FILE, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(record, default=_json_scalar) + "\n")
+    except Exception as e:  # noqa: BLE001 - receipts never block trading
+        logger.error(f"Could not append to queue_log.jsonl: {e}", exc_info=True)
+
+
+def _read_queue_events() -> list[dict]:
+    """Read the receipt log, skipping any line that is not valid JSON.
+
+    A torn final line is possible if the machine died mid-append. Skipping it
+    loses one receipt; refusing to parse the file would lose all of them.
+    """
+    if not QUEUE_LOG_FILE.exists():
+        return []
+    events = []
+    try:
+        for line in QUEUE_LOG_FILE.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                events.append(json.loads(line))
+            except ValueError:
+                logger.warning("Skipping an unreadable line in queue_log.jsonl.")
+    except OSError as e:
+        logger.error(f"Could not read queue_log.jsonl: {e}", exc_info=True)
+    return events
+
+
+def _dropped_actions() -> tuple[list[tuple[str, str]], str]:
+    """Which actions from the most recent scan were never submitted?
+
+    Returns the missing ``(symbol, action)`` pairs and the timestamp of the scan
+    that queued them. Only the latest ``queued`` event counts: each scan clears
+    the queue, so anything older was deliberately superseded rather than dropped.
+    """
+    events = _read_queue_events()
+    last_queued = None
+    for index, event in enumerate(events):
+        if event.get("event") == "queued":
+            last_queued = index
+    if last_queued is None:
+        return [], ""
+
+    queued = {(a[0], a[1]) for a in events[last_queued].get("actions", [])}
+    submitted = {
+        (e["symbol"], e["action"])
+        for e in events[last_queued + 1:]
+        if e.get("event") == "submitted"
+    }
+    return sorted(queued - submitted), events[last_queued].get("ts", "")
+
+
+def _check_queue_was_drained() -> None:
+    """Alert on anything the scan queued that the execute never sent.
+
+    Runs at the 09:45 ET fill confirm, twenty minutes after the execute slot and
+    while the session is young enough to act on. By then the execute has either
+    submitted the queue or it has not, and the receipts say which.
+
+    Deliberately does not re-queue or re-submit. The signal that produced these
+    actions may be days old by the time anyone reads the alert, and quietly
+    firing a stale order is how a bookkeeping bug becomes a real position.
+    """
+    dropped, queued_at = _dropped_actions()
+    if not dropped:
+        return
+
+    for symbol, action in dropped:
+        logger.error(
+            f"⚠️  QUEUED BUT NEVER SUBMITTED: {action} {symbol} "
+            f"(queued {queued_at}) — the pre-open execute did not send it."
+        )
+        try:
+            notifier.send_dropped_action(symbol, action, queued_at)
+        except Exception as exc:  # noqa: BLE001 - never let an alert stop the confirm
+            logger.error(f"Could not send dropped-action alert: {exc}")
 
 
 # ── Market-Day Guard ──────────────────────────────────────────────────────────
@@ -255,6 +366,7 @@ def post_close_scan():
     _check_for_mass_exit(open_positions)
 
     _save_pending(fresh=True)
+    _append_queue_event("queued", actions=[[p["symbol"], p["action"]] for p in _pending])
     logger.info(
         f"▶  SCAN COMPLETE | Pending queue: "
         f"{[(p['symbol'], p['action']) for p in _pending]}"
@@ -275,19 +387,27 @@ def _check_for_mass_exit(open_positions) -> None:
     about before the orders go out at the next open. It does not block the
     exits — a real crash should still be acted on — it makes them impossible to
     miss.
+
+    The floor is three positions, not two. With a 7-day time stop, two positions
+    opened within a few days of each other will reach it together as a matter of
+    course, and "the whole book is exiting" is not news when the whole book is
+    two names. It fired that way on 2026-08-03, which cost the alert its meaning
+    on the one day it should have carried some.
     """
-    if len(open_positions) < 2:
+    if len(open_positions) < MASS_EXIT_MIN_POSITIONS:
         return
     exits = [p for p in _pending if p["action"] == "EXIT"]
     if len({p["symbol"] for p in exits}) < len(open_positions):
         return
 
     reasons = sorted({p["reason"] for p in exits})
-    detail = (f"All {len(open_positions)} open position(s) are queued to exit at "
-              f"the next open. Reason(s): {', '.join(reasons)}.")
-    logger.error(f"⚠️  WHOLE-BOOK EXIT QUEUED — {detail}")
+    logger.error(
+        f"⚠️  WHOLE-BOOK EXIT QUEUED — All {len(open_positions)} open positions "
+        f"are queued to exit at the next open. Reason(s): {', '.join(reasons)}. "
+        f"Nothing has been sold yet."
+    )
     try:
-        notifier.send_review_needed("ALL POSITIONS", detail)
+        notifier.send_mass_exit_queued(len(open_positions), reasons)
     except Exception as exc:  # noqa: BLE001 - never let an alert stop the scan
         logger.error(f"Could not send whole-book exit alert: {exc}")
 
@@ -304,6 +424,10 @@ def pre_open_execute():
 
     if not _pending:
         logger.info("▶  PRE-OPEN EXECUTE | No pending actions.")
+        # Recorded because this line is what an empty queue looks like whether
+        # the scan queued nothing or the queue was lost between the two runs.
+        # The receipts tell those apart; this log line never could.
+        _append_queue_event("execute_empty")
         return
 
     logger.info(f"▶  PRE-OPEN EXECUTE | Processing {len(_pending)} action(s)...")
@@ -335,6 +459,13 @@ def pre_open_execute():
             executor.submit_entry(action["scan_result"])
         else:
             logger.warning(f"Unknown action type '{kind}' for {symbol} — skipping.")
+            continue
+
+        # Appended after the submit returns, not before it. A crash in between
+        # costs one false alarm from `_check_queue_was_drained`, which is cheap
+        # and self-resolving. The other ordering would record an order that never
+        # went out, and hide exactly the failure this log exists to catch.
+        _append_queue_event("submitted", symbol=symbol, action=kind)
 
     _save_pending()
     logger.info("▶  PRE-OPEN EXECUTE COMPLETE")
@@ -354,6 +485,12 @@ def fill_confirm(final: bool = False):
         return
 
     logger.info("▶  FILL CONFIRMATION + STOP PLACEMENT" + ("  (final pass)" if final else ""))
+
+    # Only on the first pass. Both passes run before the next scan, so the final
+    # one would compare the same receipts and re-send an alert already sent.
+    if not final:
+        _check_queue_was_drained()
+
     executor.confirm_fills_and_place_stops(final=final)
     executor.confirm_exit_fills()
 

@@ -71,6 +71,14 @@ def send_review_needed(symbol: str, reason: str):
 
     High priority on purpose: this means the books and the broker disagree, and
     the bot has deliberately refused to guess a price to paper over it.
+
+    The body states as fact that the position has vanished from Alpaca with no
+    booked trade, so this must only be sent when that is actually true. It used
+    to be reused for the whole-book exit warning below, which produced "ALL
+    POSITIONS is gone from Alpaca but no closed trade was booked" on a day when
+    nothing had been sold and both positions were sitting in the account. An
+    alert that says something false is worse than no alert: the next true one
+    gets read as another false alarm.
     """
     _push(
         f"review ({symbol})",
@@ -78,6 +86,44 @@ def send_review_needed(symbol: str, reason: str):
         f"{symbol} is gone from Alpaca but no closed trade was booked. {reason} "
         f"Nothing was written to trades.csv — check the broker and settle it by hand.",
         5, ["warning"],
+    )
+
+
+def send_mass_exit_queued(count: int, reasons: list[str]):
+    """Heads-up when one scan queues an exit for every open position.
+
+    Nothing has been sold at this point — the scan runs after the close and the
+    orders go out at the next open — so this is information, not a fault. Kept
+    below :func:`send_review_needed` in priority for that reason.
+    """
+    _push(
+        "mass exit",
+        "📕 WHOLE BOOK QUEUED TO EXIT",
+        f"All {count} open positions are queued to exit at the next open. "
+        f"Reason(s): {', '.join(reasons)}. Nothing has been sold yet — the "
+        f"orders go out at 09:30 ET. Cancel by clearing pending.json before then.",
+        4, ["books"],
+    )
+
+
+def send_dropped_action(symbol: str, action: str, queued_at: str):
+    """Push alert when a queued action was never submitted.
+
+    The scan queues actions and the pre-open execute submits them, in two
+    separate processes an evening apart. On 2026-07-31 the scan queued an XLF
+    exit and the 2026-08-03 execute found an empty queue; the position ran three
+    days past its time stop and nothing reported it. The daily reconciler could
+    not: it compares the books against the broker, and neither had the trade.
+
+    High priority — an exit that never went out is money at risk.
+    """
+    _push(
+        f"dropped ({symbol})",
+        f"🚨 QUEUED ORDER NEVER SENT: {symbol}",
+        f"The scan queued {action} {symbol} at {queued_at}, but the pre-open "
+        f"execute did not submit it. The position is still open and unmanaged by "
+        f"this signal. Check Alpaca and submit by hand if it still applies.",
+        5, ["rotating_light"],
     )
 
 
