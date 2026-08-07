@@ -19,7 +19,6 @@ from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import (
     GetCalendarRequest,
     GetOrdersRequest,
-    GetPortfolioHistoryRequest,
     LimitOrderRequest,
     MarketOrderRequest,
     StopOrderRequest,
@@ -53,16 +52,22 @@ def get_equity() -> float:
 
 
 def get_account_snapshot() -> dict:
-    """Equity, prior-day equity, and since-inception baseline, in one call."""
+    """Equity, prior-day equity, and since-inception baseline, in one call.
+
+    ``TradingClient`` in this alpaca-py version has no typed
+    ``get_portfolio_history`` method — only the broker client does, even
+    though the trading-API request model exists — so this hits the raw
+    endpoint via ``_client.get()`` instead of building a typed request.
+    """
     account = _client.get_account()
-    history = _client.get_portfolio_history(
-        GetPortfolioHistoryRequest(period="all", timeframe="1D")
+    history = _client.get(
+        "/account/portfolio/history", {"period": "all", "timeframe": "1D"}
     )
     return {
         "equity":          float(account.equity),
         "last_equity":     float(account.last_equity),
-        "base_value":      float(history.base_value),
-        "base_value_asof": history.base_value_asof,
+        "base_value":      float(history["base_value"]),
+        "base_value_asof": history["base_value_asof"],
     }
 
 
