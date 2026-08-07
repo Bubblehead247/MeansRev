@@ -15,12 +15,20 @@ already happened.
 
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta
+import json
+from datetime import date, datetime, time, timedelta, timezone
 
 import pytest
 
 import meansrev_main as main
 from quantcore.jobs import EXIT_FAILED, EXIT_OK
+
+# Captured before the `_no_alerts` autouse fixture below patches
+# `main._load_pending` to a no-op, so tests that need the real guard behavior
+# can still call it. It still reads `main._pending` / `main.PENDING_FILE` from
+# the module namespace at call time, so it sees whatever a test's monkeypatch
+# calls set.
+_real_load_pending = main._load_pending
 
 
 @pytest.fixture(autouse=True)
@@ -204,6 +212,29 @@ def test_the_loop_does_not_reload_the_pending_queue(monkeypatch):
 
     main._loop_job("execute", now=datetime(2026, 7, 30, 8, 25))
     assert loads == [], "the loop reloaded a queue it already holds"
+
+
+def test_load_pending_refuses_to_extend_an_already_loaded_queue(monkeypatch, caplog):
+    """A process that calls _load_pending() twice must not duplicate the queue.
+
+    On 2026-08-05 a debug session called job functions directly against live
+    state and called `_load_pending()` more than once in the same process. It
+    extends rather than replaces, so whatever was still in pending.json got
+    queued again on top of what was already in memory.
+    """
+    seeded = [{"symbol": "SPY", "action": "EXIT"}]
+    monkeypatch.setattr(main, "_pending", seeded)
+    main.PENDING_FILE.write_text(json.dumps({
+        "queued_at": datetime.now(timezone.utc).isoformat(),
+        "actions":   [{"symbol": "DIA", "action": "EXIT"}],
+    }))
+
+    with caplog.at_level("ERROR"):
+        _real_load_pending()
+
+    assert main._pending == seeded, "the on-disk action was appended anyway"
+    assert any("_load_pending" in r.message for r in caplog.records), \
+        "no error was logged for the refused reload"
 
 
 # --------------------------------------------------------------------------

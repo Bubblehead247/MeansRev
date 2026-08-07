@@ -102,6 +102,14 @@ def _save_pending(fresh: bool = False):
 
 def _load_pending():
     """Restore the queue from disk on startup, unless it has gone stale."""
+    if _pending:
+        logger.error(
+            "_load_pending() called with a non-empty in-memory queue — refusing "
+            "to extend it from pending.json. This queue was already loaded once "
+            "this process; calling _load_pending() again would duplicate every "
+            "queued action. Restart the process instead of reloading."
+        )
+        return
     if not PENDING_FILE.exists():
         return
     try:
@@ -652,8 +660,9 @@ def _loop_job(name: str, *, now=None) -> int:
     """Run a job from inside the legacy loop, through the shared harness.
 
     Deliberately does not reload the pending queue: the loop already holds it in
-    memory, and ``_load_pending`` extends rather than replaces, so reloading here
-    would duplicate every queued action.
+    memory, and ``_load_pending`` now refuses to extend an already-loaded queue
+    (see the guard at the top of that function) — but this call site should
+    never need to rely on that guard in the first place.
 
     ``now`` overrides the clock, for tests. Without it a test's result depends on
     what time of day it happens to run.
