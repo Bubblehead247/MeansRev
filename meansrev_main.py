@@ -517,18 +517,26 @@ def status_report():
     positions = pt.all_positions()
     if not positions:
         logger.info("STATUS | No open positions.")
-        return
+    else:
+        logger.info(f"STATUS | {len(positions)} open position(s):")
+        for sym, pos in positions.items():
+            days = pt.days_open(sym)
+            logger.info(
+                f"  {sym} | {pos['shares']} shares @ ${pos['entry_price']:.2f} | "
+                f"Stop=${pos['stop_price']:.2f} ({pos['stop_mult']}×ATR) | "
+                f"Days open: {days}/{config.MAX_HOLD_DAYS} | "
+                f"Stop A (1.5×): ${pos['stop_price_a']:.2f} | "
+                f"Stop B (2.5×): ${pos['stop_price_b']:.2f}"
+            )
 
-    logger.info(f"STATUS | {len(positions)} open position(s):")
-    for sym, pos in positions.items():
-        days = pt.days_open(sym)
-        logger.info(
-            f"  {sym} | {pos['shares']} shares @ ${pos['entry_price']:.2f} | "
-            f"Stop=${pos['stop_price']:.2f} ({pos['stop_mult']}×ATR) | "
-            f"Days open: {days}/{config.MAX_HOLD_DAYS} | "
-            f"Stop A (1.5×): ${pos['stop_price_a']:.2f} | "
-            f"Stop B (2.5×): ${pos['stop_price_b']:.2f}"
-        )
+    # Account-level daily push: equity, P&L, live position P&L. A formatting
+    # bug or a flaky Alpaca call here must never break the rest of this job.
+    try:
+        snapshot = executor.get_account_snapshot()
+        live_positions = executor.get_alpaca_positions()
+        notifier.send_daily_status(snapshot, live_positions)
+    except Exception as exc:  # noqa: BLE001 - a reporting bug must not break the job
+        logger.error(f"Could not send daily status push: {exc}", exc_info=True)
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────

@@ -19,6 +19,7 @@ from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import (
     GetCalendarRequest,
     GetOrdersRequest,
+    GetPortfolioHistoryRequest,
     LimitOrderRequest,
     MarketOrderRequest,
     StopOrderRequest,
@@ -49,6 +50,20 @@ _FILL_POLL_SECONDS = 1.0
 def get_equity() -> float:
     account = _client.get_account()
     return float(account.equity)
+
+
+def get_account_snapshot() -> dict:
+    """Equity, prior-day equity, and since-inception baseline, in one call."""
+    account = _client.get_account()
+    history = _client.get_portfolio_history(
+        GetPortfolioHistoryRequest(period="all", timeframe="1D")
+    )
+    return {
+        "equity":          float(account.equity),
+        "last_equity":     float(account.last_equity),
+        "base_value":      float(history.base_value),
+        "base_value_asof": history.base_value_asof,
+    }
 
 
 # ── Market Calendar ───────────────────────────────────────────────────────────

@@ -137,6 +137,46 @@ def send_error(detail: str):
     )
 
 
+def send_daily_status(snapshot: dict, positions: dict):
+    """Push the daily account summary: equity, P&L, and every open position.
+
+    Routine, not urgent — priority 3, same tier as :func:`send_warning` and
+    :func:`send_checkpoint`. ``[PAPER]`` is prefixed to the title whenever
+    ``config.PAPER`` is True, so a paper push can never be mistaken for a live
+    account's numbers.
+    """
+    equity      = snapshot["equity"]
+    last_equity = snapshot["last_equity"]
+    base_value  = snapshot["base_value"]
+    asof        = snapshot["base_value_asof"]
+
+    daily_pl     = equity - last_equity
+    daily_pl_pct = (daily_pl / last_equity * 100) if last_equity else 0.0
+    total_pl     = equity - base_value
+    total_pl_pct = (total_pl / base_value * 100) if base_value else 0.0
+
+    lines = [
+        f"Equity: ${equity:,.2f}",
+        f"Today: {daily_pl:+,.2f} ({daily_pl_pct:+.2f}%)",
+        f"Total: {total_pl:+,.2f} ({total_pl_pct:+.2f}%) since {asof}",
+        "",
+        "Open positions:",
+    ]
+    if not positions:
+        lines.append("(none)")
+    else:
+        for symbol, pos in positions.items():
+            lines.append(
+                f"{symbol} | {pos.qty} sh @ ${float(pos.avg_entry_price):.2f} | "
+                f"now ${float(pos.current_price):.2f} | "
+                f"{float(pos.unrealized_pl):+,.2f} "
+                f"({float(pos.unrealized_plpc) * 100:+.2f}%)"
+            )
+
+    title = f"{'[PAPER] ' if config.PAPER else ''}\U0001f4ca DAILY STATUS"
+    _push("daily status", title, "\n".join(lines), 3, ["bar_chart"])
+
+
 def send_signal(symbol: str, rsi_value: float):
     """Fire a high-priority push alert when a live entry signal fires."""
     _push(
