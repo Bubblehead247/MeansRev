@@ -64,9 +64,10 @@ BROAD_ETF = {
 # Non-equity ETFs get their own buckets so they don't all collapse into one cap
 # group (and aren't mislabelled "Unknown"). Used by the Connors ETF universe.
 OTHER_ETF = {
-    "GLD": "Commodity", "SLV": "Commodity",
+    "GLD": "Commodity", "SLV": "Commodity", "UNG": "Commodity",
     "TLT": "Fixed Income", "IEF": "Fixed Income", "LQD": "Fixed Income",
     "HYG": "Fixed Income", "AGG": "Fixed Income", "BND": "Fixed Income",
+    "DBMF": "Alternative", "KMLM": "Alternative",
 }
 
 CSV_FILE = Path(__file__).resolve().parent / "sectors.csv"

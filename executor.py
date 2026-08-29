@@ -155,6 +155,11 @@ def submit_entry(scan_result: dict) -> bool:
             sma200_weekly=scan_result.get("sma200_weekly"),
             sma50_daily=scan_result.get("sma50_daily"),
             atr14=scan_result.get("atr14"),
+            weekly_adx=scan_result.get("weekly_adx"),
+            # regime_band_ok, not regime_ok: the latter is filter-gated and reads
+            # True unconditionally while config.USE_REGIME_FILTER is off, which
+            # would make the shadow log say nothing failed the band, ever.
+            regime_ok=scan_result.get("regime_band_ok"),
         )
         return True
 
@@ -203,7 +208,7 @@ def confirm_fills_and_place_stops(final: bool = False):
                 open_orders = _client.get_orders(
                     GetOrdersRequest(status=QueryOrderStatus.OPEN, symbols=[symbol])
                 )
-                open_buys = [o for o in open_orders if str(o.side).lower() == "buy"]
+                open_buys = [o for o in open_orders if o.side == OrderSide.BUY]
             except Exception as e:
                 logger.error(f"Could not check open orders for {symbol}: {e}", exc_info=True)
                 open_buys = []
@@ -294,8 +299,21 @@ def confirm_exit_fills():
             log_reason = (pos_data.get("exit_reason", "signal_exit") if pos_data else "signal_exit")
             # Blend every sell fill for the day, so an exit that filled in two
             # pieces is booked at its true average rather than one of its prices.
-            fills = get_fills(symbol, side="sell")
-            filled_qty, blended_price = blended_fill_price(fills)
+            #
+            # The position can vanish from get_alpaca_positions() slightly before
+            # its fill is visible through get_orders() — two different endpoints,
+            # not updated atomically. On 2026-08-04 that gap outlasted a single
+            # check and stranded XLF/QQQ in needs_review for a full session, even
+            # though the fill was there and correct within seconds. Once flagged,
+            # nothing re-checks it (mark_needs_review deliberately stops
+            # re-examination, to avoid re-alerting on a genuine gap) — so a
+            # transient miss here is permanent. Retry briefly before giving up.
+            for attempt in range(_FILL_POLL_TRIES):
+                fills = get_fills(symbol, side="sell")
+                filled_qty, blended_price = blended_fill_price(fills)
+                if filled_qty > 0 or attempt == _FILL_POLL_TRIES - 1:
+                    break
+                time.sleep(_FILL_POLL_SECONDS)
 
             if pos_data and filled_qty > 0:
                 trade_log.log_closed_trade(
@@ -322,7 +340,7 @@ def confirm_exit_fills():
             open_orders = _client.get_orders(
                 GetOrdersRequest(status=QueryOrderStatus.OPEN, symbols=[symbol])
             )
-            open_sells = [o for o in open_orders if str(o.side).lower() == "sell"]
+            open_sells = [o for o in open_orders if o.side == OrderSide.SELL]
         except Exception as e:
             logger.error(f"Could not check open orders for {symbol}: {e}", exc_info=True)
             open_sells = []
@@ -416,7 +434,7 @@ def get_last_fill_price(symbol: str, side: str,
             GetOrdersRequest(status=QueryOrderStatus.CLOSED, symbols=[symbol], limit=10)
         )
         for order in orders:
-            if (str(order.side).lower() == side.lower()
+            if (order.side == OrderSide(side.lower())
                     and order.filled_at
                     and order.filled_avg_price):
                 if not_before is not None and order.filled_at.date() < not_before:
@@ -459,7 +477,7 @@ def get_fills(symbol: str, side: str, on_date: date | None = None) -> list[dict]
 
     out = []
     for order in orders:
-        if str(order.side).lower() != side.lower():
+        if order.side != OrderSide(side.lower()):
             continue
         filled_qty = getattr(order, "filled_qty", None)
         filled_price = getattr(order, "filled_avg_price", None)
@@ -524,7 +542,7 @@ def get_filled_qty(symbol: str, side: str) -> float | None:
 
     total = 0.0
     for order in orders:
-        if str(order.side).lower() != side.lower():
+        if order.side != OrderSide(side.lower()):
             continue
         filled = getattr(order, "filled_qty", None)
         if filled:

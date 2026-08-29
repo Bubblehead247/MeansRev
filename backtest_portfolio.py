@@ -48,7 +48,7 @@ from indicators import sma, rsi, atr
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)-8s | %(message)s")
 logger = logging.getLogger(__name__)
 
-START_BAR = config.SMA_DAILY + 5   # warmup for daily SMA50 / ATR / RSI
+START_BAR = max(config.SMA_DAILY, config.SMA_DAILY_TREND) + 5   # warmup for daily SMA50/200, ATR, RSI
 
 
 @dataclass
@@ -96,9 +96,20 @@ def prepare(symbols: list[str], years: int) -> dict:
         rn = lambda col: raw[[col]].rename(columns={col: s})
         opens, highs, lows, closes = rn("Open"), rn("High"), rn("Low"), rn("Close")
 
+    # yfinance can return a trailing row with every symbol's OHLC NaN — the most
+    # recent session's adjusted close hadn't settled at fetch time. Left in, a
+    # NaN close/open at a time-stop exit silently becomes a NaN trade, poisoning
+    # that symbol's equity (and everything computed from it) from there on.
+    while len(closes) and closes.iloc[-1].isna().all():
+        cut_date = closes.index[-1]
+        opens, highs, lows, closes = opens.iloc[:-1], highs.iloc[:-1], lows.iloc[:-1], closes.iloc[:-1]
+        logger.warning(f"Dropped unsettled trailing bar {cut_date.date()} (all symbols NaN).")
+
     idx = closes.index
-    sma50, rsi2, atr14, tradeable = {}, {}, {}, []
-    warmup_min = config.SMA_DAILY + 10
+    sma50, sma200, rsi2, atr14, tradeable = {}, {}, {}, {}, []
+    # SMA200 needs 200 bars of warmup before config.USE_DAILY_SMA200_FILTER can
+    # fire; SMA_DAILY(50) alone understated how much history an entry gate needs.
+    warmup_min = config.SMA_DAILY_TREND + 10
     for sym in symbols:
         if sym not in closes.columns:
             logger.warning(f"{sym}: not returned by yfinance — skipping.")
@@ -108,9 +119,10 @@ def prepare(symbols: list[str], years: int) -> dict:
             logger.warning(f"{sym}: only {c.notna().sum()} valid bars — skipping.")
             continue
         h, l = highs[sym].reindex(idx), lows[sym].reindex(idx)
-        sma50[sym] = sma(c, config.SMA_DAILY).reindex(idx).values
-        rsi2[sym]  = rsi(c, config.RSI_PERIOD).reindex(idx).values
-        atr14[sym] = atr(h, l, c, config.ATR_PERIOD).reindex(idx).values
+        sma50[sym]  = sma(c, config.SMA_DAILY).reindex(idx).values
+        sma200[sym] = sma(c, config.SMA_DAILY_TREND).reindex(idx).values
+        rsi2[sym]   = rsi(c, config.RSI_PERIOD).reindex(idx).values
+        atr14[sym]  = atr(h, l, c, config.ATR_PERIOD).reindex(idx).values
         tradeable.append(sym)
     logger.info(f"Data: {closes.shape[0]} days × {closes.shape[1]} symbols | "
                 f"{len(tradeable)} tradeable.")
@@ -120,7 +132,7 @@ def prepare(symbols: list[str], years: int) -> dict:
         "h": {s: highs[s].reindex(idx).values  for s in tradeable},
         "l": {s: lows[s].reindex(idx).values   for s in tradeable},
         "c": {s: closes[s].reindex(idx).values for s in tradeable},
-        "sma50": sma50, "rsi2": rsi2, "atr14": atr14,
+        "sma50": sma50, "sma200": sma200, "rsi2": rsi2, "atr14": atr14,
         "sec": {s: sectors.sector_of(s) for s in tradeable},
     }
 
@@ -131,7 +143,7 @@ def run_engine(prep, stop_kind, stop_param, variant, lo, hi,
                max_positions, max_per_sector, initial_equity):
     slip = config.SLIPPAGE_PCT
     o, h, l, c = prep["o"], prep["h"], prep["l"], prep["c"]
-    sma50, rsi2, atr14 = prep["sma50"], prep["rsi2"], prep["atr14"]
+    sma50, sma200, rsi2, atr14 = prep["sma50"], prep["sma200"], prep["rsi2"], prep["atr14"]
     sec_of, tradeable, dates = prep["sec"], prep["tradeable"], prep["dates"]
 
     equity = peak_eq = initial_equity
@@ -227,12 +239,21 @@ def run_engine(prep, stop_kind, stop_param, variant, lo, hi,
                 if sym in positions:
                     continue
                 cur_rsi, prev_rsi = rsi2[sym][i], rsi2[sym][i - 1]
-                cc, ss, aa = c[sym][i], sma50[sym][i], atr14[sym][i]
+                cc, ss, s2, aa = c[sym][i], sma50[sym][i], sma200[sym][i], atr14[sym][i]
                 if np.isnan(cur_rsi) or np.isnan(prev_rsi) or np.isnan(aa) or np.isnan(cc):
                     continue
-                crossback = prev_rsi <= config.RSI_ENTRY_THRESHOLD and cur_rsi > config.RSI_ENTRY_THRESHOLD
-                trend_ok  = (not np.isnan(ss) and cc > ss) if config.USE_TREND_FILTER else True
-                if crossback and trend_ok:
+                # Mirrors scanner.py's rsi_entry_trigger: "oversold" (Connors, buy
+                # the dip while RSI(2) is still under threshold) vs "crossback"
+                # (legacy, buy only once RSI(2) recrosses back above it).
+                if config.ENTRY_MODE == "oversold":
+                    rsi_trigger = cur_rsi < config.RSI_ENTRY_THRESHOLD
+                else:
+                    rsi_trigger = prev_rsi <= config.RSI_ENTRY_THRESHOLD and cur_rsi > config.RSI_ENTRY_THRESHOLD
+                trend_ok = (not np.isnan(ss) and cc > ss) if config.USE_TREND_FILTER else True
+                # Connors daily-200 regime gate — NaN (insufficient warmup) fails
+                # closed, same as scanner.py's above_daily_sma200.
+                daily_trend_ok = (not np.isnan(s2) and cc > s2) if config.USE_DAILY_SMA200_FILTER else True
+                if rsi_trigger and trend_ok and daily_trend_ok:
                     sig.append((sym, cur_rsi, aa))
             pending = sig
 

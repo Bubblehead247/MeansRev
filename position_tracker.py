@@ -58,6 +58,8 @@ def add(
     sma200_weekly: float = None,
     sma50_daily: float = None,
     atr14: float = None,
+    weekly_adx: float = None,
+    regime_ok: bool = None,
 ):
     """Record a new open position."""
     data = _load()
@@ -75,6 +77,11 @@ def add(
         "sma200_weekly_at_signal": sma200_weekly,
         "sma50_daily_at_signal":   sma50_daily,
         "atr14_at_signal":         atr14,
+        # Shadow record of the disabled ADX regime filter (config.USE_REGIME_FILTER
+        # is OFF live) — captured on every real entry so trades.csv can be split
+        # into "would have passed the band" vs. not, without ever gating on it.
+        "weekly_adx_at_signal":    weekly_adx,
+        "regime_band_ok_at_signal": regime_ok,
         "entry_date":              date.today().isoformat(),
         # Timezone-aware UTC. datetime.utcnow() is deprecated in 3.12+ and
         # produced a naive timestamp that read as local time to anything parsing it.

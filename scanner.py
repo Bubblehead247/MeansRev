@@ -130,8 +130,11 @@ def evaluate_symbol(symbol: str) -> dict:
     volume_spike      = last_volume > (config.VOLUME_SPIKE_MULT * last_vol_ma20)
 
     # ── Weekly bars ───────────────────────────────────────────────────────────
-    # Only the trend gate and the regime gate use weekly data. When both are off
-    # the weekly fetch is pure cost, so skip it entirely (defaults below stand).
+    # Fetched unconditionally, even though the trend gate and regime gate are
+    # both OFF live: this is also how the ADX regime filter gets watched without
+    # being turned on — every entry logs the weekly ADX it saw, so trades.csv can
+    # be split into "would have passed the band" vs. not, using genuinely new
+    # forward data rather than another resample of the same backtest window.
     above_weekly_sma50  = False
     above_weekly_sma200 = False
     last_weekly_sma50   = 0.0
@@ -147,29 +150,27 @@ def evaluate_symbol(symbol: str) -> dict:
     # once** — a whole-book liquidation caused by a network error rather than by
     # anything the market did.
     weekly_data_ok = False
-    need_weekly = config.USE_TREND_FILTER or config.USE_REGIME_FILTER
 
-    if need_weekly:
-        try:
-            weekly_bars = fetch_weekly_bars(symbol)
-            if len(weekly_bars) >= config.SMA_WEEKLY_SLOW + 10:
-                w_close  = weekly_bars["close"]
-                w_sma50  = sma(w_close, config.SMA_WEEKLY_FAST)
-                w_sma200 = sma(w_close, config.SMA_WEEKLY_SLOW)
-                w_adx    = adx(weekly_bars["high"], weekly_bars["low"], w_close, config.REGIME_ADX_PERIOD)
-                last_weekly_sma50  = round(float(w_sma50.iloc[-1]),  2)
-                last_weekly_sma200 = round(float(w_sma200.iloc[-1]), 2)
-                last_weekly_adx    = round(float(w_adx.iloc[-1]),    2)
-                above_weekly_sma50  = last_close > last_weekly_sma50
-                above_weekly_sma200 = last_close > last_weekly_sma200
-                weekly_data_ok      = True
-            else:
-                logger.warning(
-                    f"{symbol}: Insufficient weekly data ({len(weekly_bars)} bars) "
-                    f"— weekly gate FAILED (need {config.SMA_WEEKLY_SLOW + 10})."
-                )
-        except Exception as e:
-            logger.error(f"{symbol}: Weekly bar fetch failed: {e}", exc_info=True)
+    try:
+        weekly_bars = fetch_weekly_bars(symbol)
+        if len(weekly_bars) >= config.SMA_WEEKLY_SLOW + 10:
+            w_close  = weekly_bars["close"]
+            w_sma50  = sma(w_close, config.SMA_WEEKLY_FAST)
+            w_sma200 = sma(w_close, config.SMA_WEEKLY_SLOW)
+            w_adx    = adx(weekly_bars["high"], weekly_bars["low"], w_close, config.REGIME_ADX_PERIOD)
+            last_weekly_sma50  = round(float(w_sma50.iloc[-1]),  2)
+            last_weekly_sma200 = round(float(w_sma200.iloc[-1]), 2)
+            last_weekly_adx    = round(float(w_adx.iloc[-1]),    2)
+            above_weekly_sma50  = last_close > last_weekly_sma50
+            above_weekly_sma200 = last_close > last_weekly_sma200
+            weekly_data_ok      = True
+        else:
+            logger.warning(
+                f"{symbol}: Insufficient weekly data ({len(weekly_bars)} bars) "
+                f"— weekly gate FAILED (need {config.SMA_WEEKLY_SLOW + 10})."
+            )
+    except Exception as e:
+        logger.error(f"{symbol}: Weekly bar fetch failed: {e}", exc_info=True)
 
     weekly_trend_ok = above_weekly_sma50 and above_weekly_sma200
 
@@ -189,6 +190,12 @@ def evaluate_symbol(symbol: str) -> dict:
     daily_trend_ok     = above_daily_sma200 if config.USE_DAILY_SMA200_FILTER else True
     # Volume spike is an optional confirmation (see config.USE_VOLUME_FILTER).
     volume_ok          = volume_spike if config.USE_VOLUME_FILTER else True
+    # Raw ADX band membership, independent of whether the filter is enforced —
+    # this is the shadow signal logged to trades.csv (see position_tracker.add).
+    # None (not False) when weekly data is missing, so a fetch failure reads as
+    # "unknown" in the ledger rather than silently as "band missed".
+    regime_band_ok      = (config.REGIME_ADX_MIN <= last_weekly_adx < config.REGIME_ADX_MAX
+                           ) if weekly_data_ok else None
     # Regime gate: weekly ADX must sit in the moderate-trend band (see
     # config.USE_REGIME_FILTER). If weekly data was missing, last_weekly_adx is
     # 0.0 → fails the band, blocking entry (conservative — matches weekly gate).
@@ -228,6 +235,7 @@ def evaluate_symbol(symbol: str) -> dict:
         "above_weekly_sma200": above_weekly_sma200,
         "weekly_data_ok":      weekly_data_ok,
         "regime_ok":           regime_ok,
+        "regime_band_ok":      regime_band_ok,
         "volume_spike":        volume_spike,
         "stop_a":              stop_a,
         "stop_b":              stop_b,

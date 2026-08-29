@@ -128,7 +128,16 @@ def fetch_history_yfinance(symbol: str, start: datetime, end: datetime) -> pd.Da
         "Open": "open", "High": "high", "Low": "low",
         "Close": "close", "Volume": "volume",
     })
-    return df[["open", "high", "low", "close", "volume"]].sort_index()
+    df = df[["open", "high", "low", "close", "volume"]].sort_index()
+
+    # yfinance can return a trailing row with volume populated but OHLC all NaN
+    # for the most recent session — the adjusted close hadn't settled yet at
+    # fetch time. Left in, that NaN silently becomes an exit_price mid-simulation
+    # (e.g. a time-stop exit at day_open) and poisons every downstream stat for
+    # that symbol — pnl_pct, equity, CAGR — from that trade onward. A real gap in
+    # a symbol's *own* trading history reads the same way, so this only ever
+    # drops genuinely unusable rows, never masks one.
+    return df.dropna(subset=["close"])
 
 
 def fetch_history(symbol: str, start: datetime, end: datetime, source: str = "yfinance") -> pd.DataFrame:
@@ -416,7 +425,11 @@ def backtest_symbol(
                 est_stop     = entry_price - (stop_mult * cur_atr)
                 stop_dist    = entry_price - est_stop
 
-                if stop_dist <= 0:
+                # NaN-safe: `stop_dist <= 0` is False for NaN, so a NaN entry_price
+                # (a short-history symbol like DBMF/XLC with a gap at the reindex
+                # boundary) fell through to `int(dollar_risk / stop_dist)` below
+                # and crashed with "cannot convert float NaN to integer".
+                if not (stop_dist > 0):
                     continue
 
                 dollar_risk  = equity * config.RISK_PER_TRADE

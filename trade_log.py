@@ -24,6 +24,11 @@ HEADERS = [
     "rsi2_at_signal", "sma200_weekly_at_signal", "sma50_daily_at_signal", "atr14_at_signal",
     "exit_date", "exit_price", "exit_reason",
     "days_held", "realized_pnl", "realized_pnl_pct",
+    # Shadow record of the disabled ADX regime filter (config.USE_REGIME_FILTER)
+    # — captured on every real entry so win rate/PF can be split by "would have
+    # passed the band" without ever gating live entries on it. See scanner.py's
+    # regime_band_ok and position_tracker.add.
+    "weekly_adx_at_signal", "regime_band_ok_at_signal",
 ]
 
 
@@ -69,6 +74,8 @@ def log_closed_trade(pos_data: dict, exit_price: float, exit_reason: str,
         "days_held":               (exit_date - entry_date).days,
         "realized_pnl":            pnl,
         "realized_pnl_pct":        pnl_pct,
+        "weekly_adx_at_signal":    pos_data.get("weekly_adx_at_signal", ""),
+        "regime_band_ok_at_signal": pos_data.get("regime_band_ok_at_signal", ""),
     }
 
     write_header = not CSV_FILE.exists()

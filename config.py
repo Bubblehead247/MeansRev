@@ -28,9 +28,10 @@ PAPER      = True   # Set False when going live with real money
 # These ETFs are survivorship-clean, deeply liquid, and already sector-mapped in
 # sectors.py (for the MAX_PER_SECTOR cap). To revert, restore the list above.
 SYMBOLS = [
-    "SPY", "QQQ", "IWM", "DIA",                  # broad index (→ Broad/Index)
-    "XLE", "XLF", "XLK", "XLV", "XLU",           # sector ETFs (→ their GICS sector)
-    "GLD", "TLT",                                # commodity / long bonds
+    "SPY", "QQQ", "IWM", "DIA", "RSP", "IJH", "EFA", "EEM",   # broad index (→ Broad/Index)
+    "XLE", "XLF", "XLK", "XLV", "XLU", "XLI", "XLY", "XLP", "XLB", "XLRE", "XLC",  # sector ETFs (→ GICS sector)
+    "GLD", "SLV", "TLT",                          # commodity / long bonds
+    "UNG", "DBMF",                                # natural gas / managed futures (low corr., see sectors.py)
 ]
 
 # ── Indicator Parameters ──────────────────────────────────────────────────────
@@ -72,8 +73,8 @@ WEEKLY_LOOKBACK_WEEKS = 220  # Weekly bars (SMA200=200 + buffer)
 RISK_PER_TRADE = 0.01        # 1% of account equity risked per trade
 # Notional cap: no single position may exceed this fraction of equity. Stops the
 # 1%-risk sizing formula from building huge, leveraged positions on low-vol names
-# (tiny stop distance → giant share count). At 0.20, MAX_POSITIONS(5) × 20% =
-# 100% of equity fully invested with no leverage.
+# (tiny stop distance → giant share count). At 0.20, MAX_POSITIONS(4) × 20% =
+# 80% of equity at full notional, no leverage possible.
 MAX_POSITION_PCT = 0.20
 
 # ── Limit Order Slippage Controls ─────────────────────────────────────────────
@@ -137,7 +138,7 @@ NTFY_TOPIC = os.getenv("NTFY_TOPIC", "").strip()
 
 # ── Exit Rules ────────────────────────────────────────────────────────────────
 MAX_HOLD_DAYS = 7            # Time stop: force exit if trade is still open after 7 days
-MAX_POSITIONS = 5            # Max concurrent positions (5% total risk cap at 1% each)
+MAX_POSITIONS = 4            # Max concurrent positions (4% total risk cap at 1% each)
 MAX_PER_SECTOR = 2           # Max concurrent positions in any one sector (see sectors.py)
 
 # ── Scheduling (Central Time — CST is ET minus 1 hour) ───────────────────────
