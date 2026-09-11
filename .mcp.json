@@ -1,8 +1,9 @@
 {
   "mcpServers": {
     "alpaca": {
-      "command": "C:\\Users\\Cody\\.local\\bin\\alpaca-mcp-server.exe",
+      "command": "uvx",
       "args": [
+        "alpaca-mcp-server",
         "--transport",
         "stdio",
         "--env-file",
