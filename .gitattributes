@@ -1,0 +1,16 @@
+# Windows-native project (Task Scheduler, .bat launchers) — normalize
+# everything to CRLF so `git status`/`git diff` stop lighting up on line
+# endings alone. Binary/generated assets are explicitly excluded so they're
+# never run through the text-normalization filter.
+
+* text=auto eol=crlf
+
+*.bat  text eol=crlf
+
+*.docx -text
+*.xlsx -text
+*.pkl  -text
+*.ico  -text
+*.png  -text
+*.jpg  -text
+*.jpeg -text
