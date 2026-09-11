@@ -30,6 +30,10 @@ PAPER      = True   # Set False when going live with real money
 SYMBOLS = [
     "SPY", "QQQ", "IWM", "DIA", "RSP", "IJH", "EFA", "EEM",   # broad index (→ Broad/Index)
     "XLE", "XLF", "XLK", "XLV", "XLU", "XLI", "XLY", "XLP", "XLB", "XLRE", "XLC",  # sector ETFs (→ GICS sector)
+    "XBI", "XOP", "XRT",                          # sub-sector siblings of XLV/XLE/XLY — added 2026-09-10:
+                                                   # 12yr backtest showed a real edge (PF 4.45/3.79/1.28) and
+                                                   # each opens a genuine second candidate in a sector that
+                                                   # otherwise has only one symbol competing for its 2-position cap.
     "GLD", "SLV", "TLT",                          # commodity / long bonds
     "UNG", "DBMF",                                # natural gas / managed futures (low corr., see sectors.py)
 ]
