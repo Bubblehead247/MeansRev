@@ -135,6 +135,10 @@ def test_a_vanished_position_with_no_sell_fill_is_not_booked(isolated_state, mon
     monkeypatch.setattr(pt, "get_exit_pending_symbols", lambda: ["DIA"])
     monkeypatch.setattr(executor, "get_alpaca_positions", lambda: {})
     monkeypatch.setattr(executor, "get_fills", lambda symbol, side, on_date=None: [])
+    # The gone-but-no-fill branch retries briefly before giving up (W: a
+    # transient miss must not permanently strand the position) — no need for
+    # the test to actually wait out those retries.
+    monkeypatch.setattr(executor.time, "sleep", lambda seconds: None)
 
     executor.confirm_exit_fills()
 
