@@ -38,6 +38,7 @@ _ORIGINAL_PATHS: dict[str, Path] = {
 PROJECT_STATE_PATHS: tuple[tuple[str, str], ...] = (
     ("PENDING_FILE", "pending.json"),
     ("QUEUE_LOG_FILE", "queue_log.jsonl"),
+    ("LOG_FILE", "bot.log"),
 )
 
 

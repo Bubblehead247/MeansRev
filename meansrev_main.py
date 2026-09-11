@@ -36,14 +36,26 @@ import sectors
 import trade_log
 
 # ── Logging ───────────────────────────────────────────────────────────────────
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
-    handlers=[
-        logging.FileHandler("bot.log"),
-        logging.StreamHandler(),
-    ],
-)
+# Deliberately NOT called at import time. meansrev_main is imported by the test
+# suite (tests/conftest.py etc.), and logging.basicConfig() attaches a
+# FileHandler the moment the module loads — every pytest run was silently
+# appending fake log lines into the live bot.log, interleaving fabricated
+# entries with real trading history. Call _configure_logging() only from the
+# __main__ block below, where this module is actually run as the bot.
+LOG_FILE = Path(__file__).resolve().parent / "bot.log"
+
+
+def _configure_logging():
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
+        handlers=[
+            logging.FileHandler(LOG_FILE),
+            logging.StreamHandler(),
+        ],
+    )
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -696,6 +708,8 @@ def run_one_job(name: str, *, now=None) -> int:
 
 if __name__ == "__main__":
     import argparse
+
+    _configure_logging()
 
     parser = argparse.ArgumentParser(
         description="Mean Reversion bot. With no arguments, runs the built-in "
