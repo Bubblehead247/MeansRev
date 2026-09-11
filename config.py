@@ -97,7 +97,7 @@ STOP_MULT_A      = 1.5
 STOP_MULT_B      = 2.5
 ACTIVE_STOP_MULT = 2.5       # ← Change to 1.5 to test the tighter stop variant
 
-# ── Regime Filter (experimental — backtest measurement only) ──────────────────
+# ── Regime Filter ──────────────────────────────────────────────────────────────
 # Gate entries on weekly trend STRENGTH. Validation (analysis.py) found the edge
 # is positive in BOTH in/out-of-sample halves only in a moderate-trend band:
 # dead-sideways (ADX<20) and runaway trends (ADX>=25) both underperformed.
@@ -105,7 +105,11 @@ ACTIVE_STOP_MULT = 2.5       # ← Change to 1.5 to test the tighter stop varian
 # scanner.py (live). Validation: filtered edge is positive in both in/out-of-
 # sample halves and ~3× lower drawdown, but keeps only ~26% of signals and its
 # bootstrap CI still includes zero — promising, not statistically proven.
-USE_REGIME_FILTER = False  # OFF: sideways universe (low ADX) would be blocked by the band
+# Turned ON 2026-09-10: the shadow-logged column (trades.csv,
+# regime_band_ok_at_signal) added in 995a6c6 showed the 4 trades since then all
+# had regime_band_ok=False and all lost money — consistent with, though far too
+# small a sample to confirm, the backtest finding above.
+USE_REGIME_FILTER = True
 REGIME_ADX_PERIOD = 14
 REGIME_ADX_MIN    = 20.0
 REGIME_ADX_MAX    = 25.0
