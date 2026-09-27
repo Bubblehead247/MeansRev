@@ -258,3 +258,43 @@ def test_emoji_log_lines_reach_bot_log():
 
     text = main.LOG_FILE.read_text(encoding="utf-8")
     assert "📥 BUY LIMIT ORDER submitted | XLV" in text
+
+
+# --------------------------------------------------------------------------
+# No new stop on a position that is being sold
+# --------------------------------------------------------------------------
+
+
+def test_a_pending_exit_gets_no_new_stop_and_its_fallback_sell_goes_out(isolated_state,
+                                                                       monkeypatch):
+    """Reproduces 2026-08-26: DIA exit_pending with no stop on record.
+
+    The confirm pass placed a fresh stop on all 78 shares, the stop held them,
+    and the fallback market sell was refused, so the exit slipped a day.
+    """
+    position = {
+        "symbol": "DIA", "entry_price": 532.75, "stop_price": 521.62, "shares": 78,
+        "stop_mult": 2.5, "stop_order_id": None, "exit_status": "exit_pending",
+        "exit_reason": "time_stop", "entry_date": "2026-08-18", "atr14_at_signal": 5.05,
+    }
+    pt._save({"DIA": position})
+    monkeypatch.setattr(executor, "get_alpaca_positions", lambda: {
+        "DIA": SimpleNamespace(qty="78", avg_entry_price="532.75", current_price="533.0"),
+    })
+    monkeypatch.setattr(executor._client, "get_orders", lambda request: [])
+    submitted = []
+
+    def submit_order(request):
+        submitted.append(request)
+        return SimpleNamespace(id=f"order-{len(submitted)}")
+
+    monkeypatch.setattr(executor._client, "submit_order", submit_order)
+    monkeypatch.setattr(executor, "await_fill", lambda order_id, tries=5: None)
+
+    executor.confirm_fills_and_place_stops()
+    executor.confirm_exit_fills()
+
+    kinds = [type(request).__name__ for request in submitted]
+    assert "StopOrderRequest" not in kinds, "a stop was placed on shares being sold"
+    assert kinds == ["MarketOrderRequest"]
+    assert submitted[0].side == OrderSide.SELL and submitted[0].qty == 78

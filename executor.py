@@ -279,6 +279,15 @@ def confirm_fills_and_place_stops(final: bool = False):
     alpaca_positions = get_alpaca_positions()
 
     for symbol, pos_data in tracked.items():
+        # A position on its way out must not get a new stop. On 2026-08-26 DIA
+        # was exit_pending with no stop on record; this pass placed a fresh GTC
+        # stop on all 78 shares, which held them, so the fallback market sell
+        # was refused ("insufficient qty available") and the time stop exited
+        # a day late.
+        if pos_data.get("exit_status", "open") != "open":
+            logger.info(f"{symbol}: {pos_data['exit_status']}, not placing a stop.")
+            continue
+
         if pos_data.get("stop_order_id"):
             logger.info(f"{symbol}: Stop already placed (ID={pos_data['stop_order_id']}), skipping.")
             continue
