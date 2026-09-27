@@ -123,3 +123,42 @@ stop filling, the fallback is the morning sale, and a fixed buffer trades
 yield for fewer late entries as above. Paper pays no dividends (Alpaca's
 paper rules), so cash_sweep.report() estimates them from SGOV's adjusted vs
 raw prices: 3 ex-dates Jul-Sep 2026 at ~0.30% each, ~3.5%/yr.
+
+## Events and ticker ranking (2026-09-27) — `event_study.py`, `event_holdcheck.py`, `sweep_rank.py`, `ticker_table.py`, `ticker_oos.py`
+
+ETFs don't report earnings, so the MeansRev version of SeykotaBot's study uses
+macro releases and market-wide earnings season. Sources: FOMC decisions from
+federalreserve.gov calendar pages; CPI and jobs-report dates from the BLS
+release archives via web.archive.org (bls.gov blocks scripts); earnings dates
+from SeykotaBot's Nasdaq calendar (2016+). 1,853 trades, live config.
+
+- Nothing actionable. An FOMC/CPI/jobs release on the signal day, or between
+  the signal and the entry, changes the average trade by -0.54..+0.76 pts with
+  every 95% CI spanning zero. Earnings season vs lull: no difference.
+- "Held through a release" looked strong (jobs report +1.09 pts, 16/16 years)
+  but is hold length: trades that last longer contain more releases. Same hold
+  length: FOMC +0.05, CPI -0.02, jobs +0.40; held positions returned +0.18% on
+  jobs-report days vs +0.15% on other days. No blackout, no event rule.
+
+Ranking (which signal gets a slot; ~half of signal-days find none):
+
+| Ranking | CAGR 2011-26 | 2011-18 | 2019-26 | Alpaca 2020-26 | Years beating live (yf / Alpaca) |
+|---|---|---|---|---|---|
+| Symbol order (live: broad indexes first) | 6.30% | 3.22% | 9.59% | 10.17% | - |
+| Closest to the 200-day | 6.69% | 3.12% | 10.53% | 10.88% | 9/16, 5/7 |
+| Own track record (past trades only) | 6.62% | 3.80% | 9.85% | 9.57% | 9/16, 3/7 |
+| Most oversold | 6.28% | 3.41% | 9.34% | 9.49% | 7/16, 2/7 |
+| Lowest IBS | 6.06% | 3.14% | 9.18% | 9.22% | 7/16, 2/7 |
+| Nearest 52-week high (SeykotaBot's) | 5.86% | 2.94% | 8.97% | 9.48% | 7/16, 3/7 |
+| Most volatile (ATR %) | 5.83% | 2.68% | 9.20% | 9.58% | 7/16, 2/7 |
+| Reverse symbol order | 5.97% | 3.08% | 9.06% | 9.39% | 7/16, 3/7 |
+| Biggest 5-day drop | 5.70% | 2.60% | 9.01% | 9.24% | 6/16, 2/7 |
+
+No ranking beats the live order robustly; "closest to the 200-day" is the only
+one ahead on both datasets but loses 2011-18 and wins 9/16 years.
+
+Per ticker (`results/ticker_table.csv`): EFA, EEM and XLU lost in both halves.
+But past results don't persist: dropping the tickers that lost in 2011-18
+(IJH, XLE, GLD, ... later winners) cut 2019-26 from 9.59% to 7.55% and Alpaca
+from 10.17% to 8.25%; demoting or re-ordering by 2011-18 results was a coin
+flip. Keep the universe and the order.

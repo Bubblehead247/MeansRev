@@ -1,0 +1,4 @@
+event,raw gap (pts/trade),same-hold-length gap,hold-length buckets,held-day return on release days %,held-day return other days %,release position-days
+FOMC,0.37,0.05,11,0.126,0.15,300
+CPI,0.84,-0.02,11,0.139,0.149,361
+Jobs report,1.09,0.4,10,0.182,0.147,422

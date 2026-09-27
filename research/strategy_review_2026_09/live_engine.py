@@ -46,6 +46,18 @@ import config                      # noqa: E402
 import sectors                     # noqa: E402
 from indicators import adx, atr, rsi, sma   # noqa: E402
 
+#: Candidate rankings when more signals than slots: (array, sign), sorted
+#: ascending on sign x value, so sign -1 means "highest first".
+RANKS = {
+    "most_oversold": ("rsi2", 1),     # lowest RSI(2)
+    "hi52":          ("hi52", -1),    # nearest the 52-week high (SeykotaBot's rank)
+    "lowest_ibs":    ("ibs", 1),      # closed nearest the day's low
+    "highest_atrp":  ("atrp", -1),    # most volatile (ATR % of price)
+    "biggest_drop5": ("ret5", 1),     # largest 5-day fall
+    "strongest_trend": ("dist200", -1),  # furthest above the 200-day
+    "weakest_trend": ("dist200", 1),  # closest to the 200-day
+}
+
 ORIGINAL_11 = ["SPY", "QQQ", "IWM", "DIA", "XLE", "XLF", "XLK", "XLV", "XLU", "GLD", "TLT"]
 
 
@@ -94,6 +106,13 @@ def prepare(bars: dict[str, pd.DataFrame]) -> dict:
             "wadx":   wk_adx.reindex(idx, method="ffill").values,
             "wcount": wk_count.reindex(idx, method="ffill").fillna(0).values,
             "sector": sectors.sector_of(s),
+            # ranking keys (all known at the signal close)
+            "hi52":   (c / c.rolling(252, min_periods=200).max()).values,
+            "ibs":    ((c - l) / (h - l)).values,
+            "atrp":   (atr(valid["high"], valid["low"], valid["close"], config.ATR_PERIOD)
+                       .reindex(idx) / c).values,
+            "ret5":   (c / c.shift(5) - 1).values,
+            "dist200": (c / sma(c.dropna(), config.SMA_DAILY_TREND).reindex(idx) - 1).values,
         }
     return out
 
@@ -116,7 +135,7 @@ class Params:
     stop_mult: float = config.ACTIVE_STOP_MULT
     entry_limit_pct: float = config.ENTRY_LIMIT_PCT
     limit_entries: bool = True          # False = fill every signal at the open
-    rank: str = "symbol_order"          # or "most_oversold"
+    rank: str = "symbol_order"          # or a key in RANKS
     slip: float = config.SLIPPAGE_PCT
     exit_extra_slip: float = 0.0
 
@@ -209,8 +228,21 @@ def run(prep: dict, p: Params, start: str, end: str, equity0: float = 100_000.0)
                 if not (p.adx_min <= w < p.adx_max):
                     continue
             cands.append((s, c * (1 + p.entry_limit_pct), a, r))
-        if p.rank == "most_oversold":
-            cands.sort(key=lambda t: t[3])
+        if p.rank == "reverse_order":
+            cands.reverse()
+        elif p.rank == "track_record":
+            # each symbol's own closed trades so far (no lookahead); fewer than
+            # 5 trades counts as 0 (neutral)
+            past: dict[str, list[float]] = {}
+            for t in trades:
+                past.setdefault(t["symbol"], []).append(t["pct"])
+            cands.sort(key=lambda t: -(np.mean(past[t[0]]) if len(past.get(t[0], [])) >= 5 else 0.0))
+        elif p.rank in RANKS:
+            col, sign = RANKS[p.rank]
+            def _key(t):
+                v = S[t[0]][col][i] if col != "rsi2" else t[3]
+                return float("inf") if np.isnan(v) else sign * v
+            cands.sort(key=_key)
         for cand in cands:
             signals += 1
             sec = S[cand[0]]["sector"]
