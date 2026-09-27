@@ -179,7 +179,8 @@ def send_daily_status(snapshot: dict, positions: dict, sweep: dict | None = None
             f"Cash sweep ({config.CASH_SWEEP_SYMBOL}): ${sweep['holding_value']:,.2f} held | "
             f"earned {sweep['total']:+,.2f} since {sweep['since']} "
             f"(price {sweep['realized'] + sweep['unrealized']:+,.2f}, "
-            f"dividends {sweep['dividends']:+,.2f})"
+            f"dividends {sweep['dividends']:+,.2f}"
+            f"{' est. — paper pays none' if sweep.get('dividends_estimated') else ''})"
             + ("" if sweep["ledger_matches_broker"] else " | LEDGER MISMATCH"),
         ]
 

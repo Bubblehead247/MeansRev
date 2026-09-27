@@ -103,3 +103,23 @@ Only the time stop helps on both datasets; the rest lose or are coin flips.
 Time stop neighbours (CAGR): 7d 5.39 / 8d 6.13 / 9d 6.12 / 10d 6.30 / 12d 6.11 /
 14d 6.45 on yfinance; each of 8-14 also beats 7 in 2011-18, 2019-26 and on
 Alpaca 2020-26 (9.9-10.2 vs 9.44). A plateau, not a spike.
+
+## Cash sweep: how much to keep in cash (`sweep_tbill3.py`)
+
+BIL for SGOV, 1 bp per trade, buys only while the trailing yield is over 1%.
+"Short" = a morning when the entries need more cash than is on hand, so the
+ETF is sold at the open and those entries go in late.
+
+| How cash is kept | Added, 2011-26 | Added, 2023-26 | Entry mornings short |
+|---|---|---|---|
+| Evening pre-sale, 2% buffer (live) | +0.46 pts/yr | +1.57 pts/yr | 0/1,125 (0%) |
+| Fixed buffer 15% | +0.35 | +1.19 | 236 (21%) |
+| Fixed buffer 30% | +0.25 | +0.86 | 108 (10%) |
+| Fixed buffer 45% | +0.17 | +0.57 | 49 (4%) |
+| Fixed buffer 60% | +0.10 | +0.33 | 22 (2%) |
+
+The evening pre-sale is why the buffer can be 2%. If after-hours orders ever
+stop filling, the fallback is the morning sale, and a fixed buffer trades
+yield for fewer late entries as above. Paper pays no dividends (Alpaca's
+paper rules), so cash_sweep.report() estimates them from SGOV's adjusted vs
+raw prices: 3 ex-dates Jul-Sep 2026 at ~0.30% each, ~3.5%/yr.

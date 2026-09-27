@@ -125,6 +125,9 @@ def fetch_recent_orders(limit: int = 100) -> list[dict]:
         # would otherwise pollute the trade list with non-events.
         if not o.filled_at or not o.filled_avg_price:
             continue
+        # Cash-sweep orders park idle cash; they are not strategy trades.
+        if o.symbol == config.CASH_SWEEP_SYMBOL:
+            continue
         out.append({
             "filled_at":    o.filled_at,
             "symbol":       o.symbol,

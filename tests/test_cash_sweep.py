@@ -183,6 +183,8 @@ def test_the_status_report_does_not_cancel_a_working_order(broker):
 
 
 def test_report_adds_price_gain_and_dividends(broker, monkeypatch):
+    """Live account: the broker's DIV activities are the dividends."""
+    monkeypatch.setattr(config, "PAPER", False)
     cash_sweep.evening_rebalance([])
     broker.price = 100.5
     monkeypatch.setattr(broker, "get_all_positions", lambda: [SimpleNamespace(
@@ -201,3 +203,30 @@ def test_disabled_does_nothing(broker, monkeypatch):
     assert cash_sweep.evening_rebalance([]) is None
     assert cash_sweep.fund_entries([_entry()]) is None
     assert broker.orders == {}
+
+
+def test_paper_reports_an_estimated_dividend(broker, monkeypatch):
+    """Paper pays no dividends, so the report estimates them from prices."""
+    import pandas as pd
+
+    monkeypatch.setattr(config, "PAPER", True)
+    cash_sweep.evening_rebalance([])
+    held = broker.sgov
+    raw = pd.Series([100.0, 100.0, 99.70], index=["2026-09-29", "2026-09-30", "2026-10-01"])
+    adj = pd.Series([99.70, 99.70, 99.70], index=raw.index)   # 10/01 ex-date: 0.30 paid
+    monkeypatch.setattr(cash_sweep, "_raw_and_adjusted_closes", lambda since: (raw, adj))
+    monkeypatch.setattr(cash_sweep, "ledger_rows", lambda: [{
+        "timestamp": "2026-09-28T20:35:00+00:00", "side": "buy", "qty": held,
+        "price": 100.0, "order_id": "o1", "status": "filled", "symbol": "SGOV"}])
+    r = cash_sweep.report()
+    assert r["dividends_estimated"]
+    assert r["dividends"] == pytest.approx(held * 0.30, rel=1e-3)
+
+
+def test_shares_bought_after_the_ex_date_open_earn_nothing():
+    import pandas as pd
+
+    raw = pd.Series([100.0, 99.70], index=["2026-09-30", "2026-10-01"])
+    adj = pd.Series([99.70, 99.70], index=raw.index)
+    rows = [{"timestamp": "2026-10-01T14:00:00+00:00", "side": "buy", "qty": 100}]  # 10:00 ET
+    assert cash_sweep.estimated_dividends(rows, raw, adj) == 0.0

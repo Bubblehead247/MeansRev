@@ -334,12 +334,71 @@ def report() -> dict:
                             if a.get("symbol") == config.CASH_SWEEP_SYMBOL)
         except Exception as e:
             logger.warning(f"Cash sweep report: could not read dividends: {e}")
+    # Paper accounts do not simulate dividends (Alpaca's paper-trading rules),
+    # yet the price still drops on each ex-date — so on paper the sweep's
+    # real return, which is almost all dividend, would read as ~0 or a loss.
+    # Estimate what a live account would have been paid instead.
+    est = 0.0
+    if first and config.PAPER:
+        try:
+            est = estimated_dividends(rows, *_raw_and_adjusted_closes(first))
+        except Exception as e:
+            logger.warning(f"Cash sweep report: could not estimate dividends: {e}")
+    paid = dividends if not config.PAPER else est
     return {
         "since": first, "holding_qty": broker_qty,
         "holding_value": float(pos.market_value) if pos else 0.0,
         "realized": round(realized, 2), "unrealized": round(unrealized, 2),
-        "dividends": round(dividends, 2),
-        "total": round(realized + unrealized + dividends, 2),
+        "dividends": round(paid, 2),
+        "dividends_estimated": bool(config.PAPER),
+        "total": round(realized + unrealized + paid, 2),
         "ledger_matches_broker": abs(ledger_qty - broker_qty) < 1e-4,
         "ledger_qty": round(ledger_qty, 4), "trades": len(rows),
     }
+
+
+def _raw_and_adjusted_closes(since: str):
+    """Daily closes of the ETF from ``since``: (raw, dividend-adjusted), ET-dated."""
+    from alpaca.data.enums import Adjustment
+    from alpaca.data.requests import StockBarsRequest
+
+    start = datetime.fromisoformat(since).replace(tzinfo=timezone.utc) - timedelta(days=7)
+    out = []
+    for adj in (Adjustment.RAW, Adjustment.ALL):
+        df = scanner._data_client.get_stock_bars(StockBarsRequest(
+            symbol_or_symbols=config.CASH_SWEEP_SYMBOL, timeframe=TimeFrame.Day, start=start,
+            end=datetime.now(timezone.utc) - scanner._SIP_DELAY,
+            feed=DataFeed.SIP, adjustment=adj)).df
+        if hasattr(df.index, "levels"):
+            df = df.xs(config.CASH_SWEEP_SYMBOL, level="symbol")
+        close = df["close"].copy()
+        close.index = [scanner._et_date(ts) for ts in close.index]
+        out.append(close)
+    return out[0], out[1]
+
+
+def estimated_dividends(rows: list[dict], raw_close, adj_close) -> float:
+    """Dividends a live account would have received on the shares held.
+
+    For each session d, the gap between the adjusted and raw daily return is
+    the dividend (it is zero except on ex-dates), paid on the shares held going
+    into d: fills timestamped before 09:30 ET on d. ``raw_close``/``adj_close``
+    are indexed by ISO date.
+    """
+    from zoneinfo import ZoneInfo
+    et = ZoneInfo("America/New_York")
+    fills = []
+    for r in rows:
+        ts = datetime.fromisoformat(r["timestamp"]).astimezone(et)
+        signed = float(r["qty"]) if r["side"] == "buy" else -float(r["qty"])
+        fills.append((ts, signed))
+    days = [d for d in raw_close.index if d in adj_close.index]
+    total = 0.0
+    for prev, day in zip(days, days[1:]):
+        open_time = datetime.fromisoformat(day).replace(hour=9, minute=30, tzinfo=et)
+        held = sum(q for ts, q in fills if ts < open_time)
+        if held <= 0:
+            continue
+        gap = adj_close[day] / adj_close[prev] - raw_close[day] / raw_close[prev]
+        total += held * raw_close[prev] * gap
+    return total
