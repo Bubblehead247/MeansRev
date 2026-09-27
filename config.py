@@ -154,7 +154,9 @@ SCREEN_RESULTS_CSV       = "screener_results.csv"
 NTFY_TOPIC = os.getenv("NTFY_TOPIC", "").strip()
 
 # ── Exit Rules ────────────────────────────────────────────────────────────────
-MAX_HOLD_DAYS = 7            # Time stop: force exit if trade is still open after 7 days
+MAX_HOLD_DAYS = 10           # Time stop: exit once held this many calendar days (was 7 until 2026-09-27;
+                             # 8-14 days all beat 7 in both halves of 2011-2026 and on Alpaca 2020-2026,
+                             # research/strategy_review_2026_09/sweep_hold.py)
 MAX_POSITIONS = 6            # Max concurrent positions (6% total risk cap at 1% each); was 4 until 2026-09-27
 MAX_PER_SECTOR = 2           # Max concurrent positions in any one sector (see sectors.py)
 

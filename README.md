@@ -49,7 +49,7 @@ left in so they can be re-tested, and their values are still computed and logged
 1. **Hard stop** — a GTC stop order resting on Alpaca's servers at
    `entry − 2.5 × ATR(14)`. It executes even if this bot is not running, which is
    the point of putting it at the exchange rather than checking it here.
-2. **Time stop** — held 7 calendar days or more (`MAX_HOLD_DAYS = 7`).
+2. **Time stop** — held 10 calendar days or more (`MAX_HOLD_DAYS = 10`).
 3. **RSI target** — RSI(2) crosses back **below** 70
    (`RSI_EXIT_THRESHOLD = 70.0`). This is the bounce being taken.
 

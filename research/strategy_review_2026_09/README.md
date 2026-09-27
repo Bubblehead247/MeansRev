@@ -81,3 +81,25 @@ describes what live does.
    signals around ex-dates, and shifts ATR/SMA200 slightly.
 2. Weekly ADX includes the unfinished week and IEX-only highs/lows, so it
    disagrees with the backtested ADX by ~3 points on a 5-point band.
+
+## Follow-up: levers on top of option C (`sweep_levers.py`, `sweep_hold.py`)
+
+Wins are years beating option C (yfinance 2011-2026 / Alpaca 2020-2026).
+Only the time stop helps on both datasets; the rest lose or are coin flips.
+
+| Variant | CAGR yf | DD yf | Years won yf | CAGR Alpaca | Years won Alpaca |
+|---|---|---|---|---|---|
+| Option C (live) | 5.39% | -11.6% | - | 9.44% | - |
+| Time stop 10 days | 6.30% | -11.4% | 10/16 | 10.17% | 5/7 |
+| RSI entry < 15 | 5.45% | -14.5% | 8/16 | 9.27% | 3/7 |
+| Entry limit +1.0% | 5.49% | -12.3% | 7/16 | 9.76% | 3/7 |
+| Rank most oversold | 5.44% | -11.9% | 8/16 | 9.10% | 3/7 |
+| Stop 1.5 ATR | 5.28% | -9.6% | 7/16 | 8.94% | 2/7 |
+| RSI exit 60 | 4.61% | -11.3% | 3/16 | 7.75% | 0/7 |
+| RSI entry < 5 | 3.99% | -11.7% | 4/16 | 6.57% | 2/7 |
+
+("No hard stop" isn't meaningful here: sizing divides by the stop distance.)
+
+Time stop neighbours (CAGR): 7d 5.39 / 8d 6.13 / 9d 6.12 / 10d 6.30 / 12d 6.11 /
+14d 6.45 on yfinance; each of 8-14 also beats 7 in 2011-18, 2019-26 and on
+Alpaca 2020-26 (9.9-10.2 vs 9.44). A plateau, not a spike.

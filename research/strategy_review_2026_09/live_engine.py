@@ -111,6 +111,7 @@ class Params:
     adx_min: float = config.REGIME_ADX_MIN
     adx_max: float = config.REGIME_ADX_MAX
     rsi_entry: float = config.RSI_ENTRY_THRESHOLD
+    rsi_exit: float = config.RSI_EXIT_THRESHOLD
     max_hold_days: int = config.MAX_HOLD_DAYS
     stop_mult: float = config.ACTIVE_STOP_MULT
     entry_limit_pct: float = config.ENTRY_LIMIT_PCT
@@ -173,8 +174,8 @@ def run(prep: dict, p: Params, start: str, end: str, equity0: float = 100_000.0)
             reason = px = None
             if i > pos["entry_i"] and (dates[i - 1] - pos["entry_date"]).days >= p.max_hold_days:
                 reason, px = "time_stop", op * (1 - p.slip - p.exit_extra_slip)
-            elif (i - 1 > pos["entry_i"] and x["rsi2"][i - 2] >= config.RSI_EXIT_THRESHOLD
-                  and x["rsi2"][i - 1] < config.RSI_EXIT_THRESHOLD):
+            elif (i - 1 > pos["entry_i"] and x["rsi2"][i - 2] >= p.rsi_exit
+                  and x["rsi2"][i - 1] < p.rsi_exit):
                 reason, px = "rsi_exit", op * (1 - p.slip - p.exit_extra_slip)
             elif low <= pos["stop"]:
                 reason, px = "hard_stop", min(pos["stop"], op) * (1 - p.slip)
