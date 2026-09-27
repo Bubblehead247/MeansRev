@@ -245,3 +245,29 @@ Idle cash and a SPY core (`risk_compare.py`, `sweep_wave3.py`):
 
 Correlation MeansRev vs SPY daily returns 0.53; in SPY's worst months MeansRev
 made +3.8% (Mar 2020), -3.9% (Dec 2018), -2.4/-0.7/-2.9% (2022).
+
+Blend robustness (`blend_check.py`, monthly rebalanced; CAGR / max DD / CAGR-to-DD):
+
+| Portfolio | 2011-18 | 2019-26 | Alpaca 2020-26 | 2011-26 |
+|---|---|---|---|---|
+| MeansRev alone | 3.22% / -10.6% / 0.30 | 9.59% / -7.4% / 1.29 | 10.17% / -7.5% / 1.36 | 6.30% / -11.4% / 0.55 |
+| 80/20 MeansRev/SPY | 4.81% / -11.8% / 0.41 | 11.28% / -9.3% / 1.22 | 11.38% / -9.3% / 1.23 | 7.95% / -11.8% / 0.67 |
+| 70/30 MeansRev/SPY | 5.61% / -12.7% / 0.44 | 12.11% / -12.3% / 0.99 | 11.95% / -11.3% / 1.06 | 8.75% / -12.7% / 0.69 |
+| 50/50 MeansRev/SPY | 7.18% / -14.6% / 0.49 | 13.71% / -18.6% / 0.74 | 13.03% / -18.0% / 0.73 | 10.34% / -18.6% / 0.56 |
+| SPY alone | 11.06% / -19.3% / 0.57 | 17.40% / -33.7% / 0.52 | 15.33% / -33.7% / 0.45 | 14.14% / -33.7% / 0.42 |
+
+No split is best in both halves (SPY alone in 2011-18, MeansRev alone in
+2019-26): a SPY core is an allocation choice, more return for more risk, not a
+free improvement. Mechanics: SPY is MeansRev's ticker #1, so a core holding
+would merge with MeansRev's SPY trades at the broker (stop sizing, time-stop
+exit, reconcile); it would need a different fund (VOO/IVV) booked separately
+like SGOV, or another account.
+
+Why trading at the signal close lost: from the signal close to the next open,
+1,853 trades averaged -0.072% (median +0.022%, 47% lower), so the next-open
+limit buys slightly cheaper on average.
+
+Multiple testing: ~40 variants tried in this review; the two that beat the live
+config ("no trend filter", "scale-in") win 9-10/16 years, about what chance
+alone would throw up. No rule change recommended now; revisit both at the
+October review with live data.
