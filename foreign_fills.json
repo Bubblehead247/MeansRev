@@ -8,6 +8,8 @@
     {"order_id": "5b1d7fb2-03a6-4bdc-a132-1f35a8c1c18c", "symbol": "EEM", "date": "2026-06-09", "note": "LiveTrader close-all sweep, 19:55 UTC"},
     {"order_id": "1a1a8590-9d51-4950-9728-0db4f519f9b4", "symbol": "ANET", "date": "2026-06-09", "note": "LiveTrader close-all sweep, 19:55 UTC"},
     {"order_id": "4e672fb4-9336-489a-8db5-ff8537fbed41", "symbol": "PH", "date": "2026-06-05", "note": "not in MeansRev's 11-symbol universe; zero mentions in bot.log"},
-    {"order_id": "4f0fa681-eca9-47ff-b9dc-59a1bc6ae247", "symbol": "ANET", "date": "2026-06-03", "note": "not in MeansRev's 11-symbol universe; zero mentions in bot.log"}
+    {"order_id": "4f0fa681-eca9-47ff-b9dc-59a1bc6ae247", "symbol": "ANET", "date": "2026-06-03", "note": "not in MeansRev's 11-symbol universe; zero mentions in bot.log"},
+    {"order_id": "e3d7130f-cba6-44ac-a53e-0ca518bdcb2e", "symbol": "AAPL", "date": "2026-08-17", "note": "1-share market buy entered Sun 2026-08-16 21:16 UTC; AAPL not in MeansRev's universe; likely a manual or claude.ai Alpaca-connector test (recorded 2026-09-27)"},
+    {"order_id": "94a2d6c7-8d3f-4049-8a01-cc9307812908", "symbol": "AAPL", "date": "2026-08-31", "note": "1-share market sell entered Sat 2026-08-29 16:12 UTC (source null), closing the AAPL test buy above (recorded 2026-09-27)"}
   ]
 }
