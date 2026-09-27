@@ -21,12 +21,13 @@ Exit (first triggered wins, checked in this priority order):
 """
 import logging
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
-from alpaca.data.enums import DataFeed
+from alpaca.data.enums import Adjustment, DataFeed
 
 import config
 from indicators import sma, rsi, atr, adx
@@ -38,20 +39,67 @@ _data_client = StockHistoricalDataClient(config.API_KEY, config.SECRET_KEY)
 
 # ── Data Fetching ─────────────────────────────────────────────────────────────
 
+#: The free data plan serves consolidated (SIP) bars only when the request ends
+#: at least 15 minutes ago. The scan runs at 16:30 ET, so the day's bar is in.
+_SIP_DELAY = timedelta(minutes=16)
+
+_ET = ZoneInfo("America/New_York")
+
+
 def _fetch_bars(symbol: str, timeframe: TimeFrame, calendar_days_back: int) -> pd.DataFrame:
-    end   = datetime.now(timezone.utc)
+    """Bars from the consolidated (SIP) feed, adjusted for splits AND dividends.
+
+    Until 2026-09-27 this asked for the IEX feed with no adjustment. Unadjusted
+    bars read an ex-dividend drop as a price fall: XLF went ex on 2026-09-21 and
+    RSI(2) on 9/22 read 0.88 instead of 8.54 — a false "oversold". IEX-only
+    highs and lows also moved the weekly ADX a median of ~3 points off the
+    backtest's, on a regime band only 5 points wide. The backtests use
+    consolidated, dividend-adjusted data; this now matches them. The latest
+    bar's close is the same either way, so entry limits and stops don't move.
+    """
+    end   = datetime.now(timezone.utc) - _SIP_DELAY
     start = end - timedelta(days=calendar_days_back)
     request = StockBarsRequest(
         symbol_or_symbols=symbol,
         timeframe=timeframe,
         start=start,
         end=end,
-        feed=DataFeed.IEX,
+        feed=DataFeed.SIP,
+        adjustment=Adjustment.ALL,
     )
     bars = _data_client.get_stock_bars(request).df
     if isinstance(bars.index, pd.MultiIndex):
         bars = bars.xs(symbol, level="symbol")
-    return bars.sort_index()
+    return _clip_bad_prints(symbol, bars.sort_index())
+
+
+def _clip_bad_prints(symbol: str, bars: pd.DataFrame) -> pd.DataFrame:
+    """Pull an impossible high or low back to the bar's open/close.
+
+    The consolidated feed kept one misplaced-decimal print: SPY on 2026-02-02
+    shows a low of 68.47 with an open of 684.20 and a close of 689.99. Through
+    ATR and Wilder smoothing that single tick held SPY's weekly ADX near 40
+    (instead of ~13) seven months later. A low under half of min(open, close),
+    or a high over twice max(open, close), is treated as a bad print. Real
+    ETF flash-crash lows (2015-08-24) fell ~40%, inside that limit.
+    """
+    if bars.empty:
+        return bars
+    body_lo = bars[["open", "close"]].min(axis=1)
+    body_hi = bars[["open", "close"]].max(axis=1)
+    bad_lo = bars["low"] < 0.5 * body_lo
+    bad_hi = bars["high"] > 2.0 * body_hi
+    if bad_lo.any() or bad_hi.any():
+        bars = bars.copy()
+        for ts in bars.index[bad_lo | bad_hi]:
+            logger.warning(
+                f"{symbol}: bad print on {ts.date()} "
+                f"(O={bars.at[ts, 'open']} H={bars.at[ts, 'high']} "
+                f"L={bars.at[ts, 'low']} C={bars.at[ts, 'close']}) — clipped to open/close."
+            )
+        bars.loc[bad_lo, "low"] = body_lo[bad_lo]
+        bars.loc[bad_hi, "high"] = body_hi[bad_hi]
+    return bars
 
 
 def fetch_bars(symbol: str) -> pd.DataFrame:
@@ -61,12 +109,44 @@ def fetch_bars(symbol: str) -> pd.DataFrame:
     ).tail(config.LOOKBACK_DAYS)
 
 
+def _et_date(ts: pd.Timestamp) -> str:
+    """Trading date of a bar timestamp as ISO text (Alpaca stamps daily bars at
+    04:00 UTC). Text, not a date: queued entries carry the scan result into
+    pending.json, whose encoder has no date support."""
+    if ts.tzinfo is not None:
+        ts = ts.tz_convert(_ET)
+    return ts.date().isoformat()
+
+
+def completed_weeks(daily: pd.DataFrame) -> pd.DataFrame:
+    """Weekly OHLCV (weeks ending Friday) built from daily bars, completed weeks only.
+
+    A week whose Friday label is later than the last daily bar is still in
+    progress and is dropped. That is the rule the backtests use (a ``W-FRI``
+    resample forward-filled onto the daily index), so the live regime gate sees
+    the ADX that was tested. Alpaca's own weekly bars include the unfinished
+    week, which is part of why the live ADX drifted from the backtest's.
+    """
+    days = daily.copy()
+    idx = days.index
+    if idx.tz is not None:
+        idx = idx.tz_convert("America/New_York").tz_localize(None)
+    days.index = idx.normalize()
+    weekly = pd.DataFrame({
+        "open":   days["open"].resample("W-FRI").first(),
+        "high":   days["high"].resample("W-FRI").max(),
+        "low":    days["low"].resample("W-FRI").min(),
+        "close":  days["close"].resample("W-FRI").last(),
+        "volume": days["volume"].resample("W-FRI").sum(),
+    }).dropna(subset=["close"])
+    return weekly[weekly.index <= days.index[-1]]
+
+
 def fetch_weekly_bars(symbol: str) -> pd.DataFrame:
-    """Weekly OHLCV — enough for SMA(50,W) and SMA(200,W)."""
-    calendar_days = int(config.WEEKLY_LOOKBACK_WEEKS * 7 * 1.3)
-    return _fetch_bars(
-        symbol, TimeFrame.Week, calendar_days
-    ).tail(config.WEEKLY_LOOKBACK_WEEKS)
+    """Weekly OHLCV — enough for SMA(50,W), SMA(200,W) and the weekly ADX."""
+    calendar_days = int((config.WEEKLY_LOOKBACK_WEEKS + 2) * 7 * 1.05)
+    daily = _fetch_bars(symbol, TimeFrame.Day, calendar_days)
+    return completed_weeks(daily).tail(config.WEEKLY_LOOKBACK_WEEKS)
 
 
 # ── Signal Evaluation ─────────────────────────────────────────────────────────
@@ -218,6 +298,7 @@ def evaluate_symbol(symbol: str) -> dict:
 
     result = {
         "symbol":              symbol,
+        "bar_date":            _et_date(bars.index[-1]),
         "close":               last_close,
         "sma50_daily":         last_sma50_d,
         "sma200_daily":        last_sma200_d,
@@ -283,9 +364,23 @@ def run_scan() -> dict[str, dict]:
     logger.info(f"Post-close scan started | {datetime.now(timezone.utc).isoformat()}")
 
     results = {}
+    today = datetime.now(_ET).date().isoformat()
     for symbol in config.SYMBOLS:
         try:
-            results[symbol] = evaluate_symbol(symbol)
+            result = evaluate_symbol(symbol)
+            # Bars now come from the SIP feed with a 16-minute delay. If today's
+            # bar is not there yet, every signal would be yesterday's, so switch
+            # them off. Not marked as an error: post_close_scan skips errored
+            # symbols entirely, and that would also skip the time stop, which
+            # doesn't depend on bars. (The scan only runs on trading days.)
+            if not result.get("error") and result.get("bar_date") != today:
+                logger.error(
+                    f"{symbol}: latest daily bar is {result.get('bar_date')}, not {today} — "
+                    f"stale data, no entry or RSI/weekly exit signals this scan."
+                )
+                result.update(entry_signal=False, exit_signal=False,
+                              weekly_exit_signal=False, stale_bars=True)
+            results[symbol] = result
         except Exception as e:
             logger.error(f"Scan error for {symbol}: {e}", exc_info=True)
             results[symbol] = {
