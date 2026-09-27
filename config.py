@@ -77,9 +77,13 @@ WEEKLY_LOOKBACK_WEEKS = 220  # Weekly bars (SMA200=200 + buffer)
 RISK_PER_TRADE = 0.01        # 1% of account equity risked per trade
 # Notional cap: no single position may exceed this fraction of equity. Stops the
 # 1%-risk sizing formula from building huge, leveraged positions on low-vol names
-# (tiny stop distance → giant share count). At 0.20, MAX_POSITIONS(4) × 20% =
-# 80% of equity at full notional, no leverage possible.
-MAX_POSITION_PCT = 0.20
+# (tiny stop distance → giant share count). At 0.15, MAX_POSITIONS(6) × 15% =
+# 90% of equity at full notional, no leverage possible (the account has none).
+# 2026-09-27: 0.20 → 0.15 together with 6 positions and the regime filter off
+# ("option C", research/strategy_review_2026_09). Backtest on Alpaca SIP adjusted
+# bars, 2020-2026: 9.4%/yr, max DD -7.3%, vs 4.6%/yr, -9.1% for the old config,
+# which left ~85% of capital idle.
+MAX_POSITION_PCT = 0.15
 
 # ── Limit Order Slippage Controls ─────────────────────────────────────────────
 ENTRY_LIMIT_PCT = 0.005      # Max we'll pay above prior close for a LOO buy (0.5%)
@@ -113,7 +117,12 @@ ACTIVE_STOP_MULT = 2.5       # ← Change to 1.5 to test the tighter stop varian
 # regime_band_ok_at_signal) added in 995a6c6 showed the 4 trades since then all
 # had regime_band_ok=False and all lost money — consistent with, though far too
 # small a sample to confirm, the backtest finding above.
-USE_REGIME_FILTER = True
+# Turned OFF 2026-09-27 (user chose "option C"): with it on, ~85% of capital sat
+# idle. The filter did improve per-trade quality (PF 1.42 vs 1.35), but its edge
+# moved with the band (18-23 better, 22-27 worse), and with the filter off the
+# strategy beat the filtered one in both halves of 2011-2026 (yfinance) and 5/7
+# years of 2020-2026 (Alpaca). regime_band_ok is still shadow-logged per trade.
+USE_REGIME_FILTER = False
 REGIME_ADX_PERIOD = 14
 REGIME_ADX_MIN    = 20.0
 REGIME_ADX_MAX    = 25.0
@@ -146,7 +155,7 @@ NTFY_TOPIC = os.getenv("NTFY_TOPIC", "").strip()
 
 # ── Exit Rules ────────────────────────────────────────────────────────────────
 MAX_HOLD_DAYS = 7            # Time stop: force exit if trade is still open after 7 days
-MAX_POSITIONS = 4            # Max concurrent positions (4% total risk cap at 1% each)
+MAX_POSITIONS = 6            # Max concurrent positions (6% total risk cap at 1% each); was 4 until 2026-09-27
 MAX_PER_SECTOR = 2           # Max concurrent positions in any one sector (see sectors.py)
 
 # ── Scheduling (Central Time — CST is ET minus 1 hour) ───────────────────────

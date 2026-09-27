@@ -30,3 +30,4 @@ backtest_wf_sweep.csv
 
 # Dated backups taken before data repairs (keep locally, never commit)
 *.bak-*
+research/**/*.pkl

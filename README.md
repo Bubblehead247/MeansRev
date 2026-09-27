@@ -42,7 +42,7 @@ left in so they can be re-tested, and their values are still computed and logged
 |---|---|---|---|
 | Weekly SMA(50)/SMA(200) gate | `USE_TREND_FILTER` | **off** | Superseded by the daily SMA200 gate |
 | Volume spike > 1.5× 20-day average | `USE_VOLUME_FILTER` | **off** | Removed ~90% of signals; 12-year return fell from +51% to +11% |
-| Weekly ADX band \[20, 25\) | `USE_REGIME_FILTER` | **off** | Promising but not statistically proven — bootstrap CI still includes zero |
+| Weekly ADX band \[20, 25\) | `USE_REGIME_FILTER` | **off** | On 2026-09-10 → 09-27; turned off because it left ~85% of capital idle (see `research/strategy_review_2026_09/`) |
 
 **Exit — first condition hit wins:**
 
@@ -68,10 +68,10 @@ submits a plain DAY market order instead.
 **Risk.**
 
 - 1% of equity risked per trade (`RISK_PER_TRADE = 0.01`).
-- No position may exceed 20% of equity (`MAX_POSITION_PCT = 0.20`). This cap
+- No position may exceed 15% of equity (`MAX_POSITION_PCT = 0.15`). This cap
   binds often: the 1%-risk formula divides by the stop distance, so a low-volatility
   ETF with a tight stop produces a very large share count without it.
-- At most 5 concurrent positions (`MAX_POSITIONS = 5`), and at most 2 in any one
+- At most 6 concurrent positions (`MAX_POSITIONS = 6`), and at most 2 in any one
   sector (`MAX_PER_SECTOR = 2`).
 - Size = `floor(equity × 0.01 / stop_distance)`, then reduced to obey the 20% cap.
 
