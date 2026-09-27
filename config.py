@@ -85,6 +85,23 @@ RISK_PER_TRADE = 0.01        # 1% of account equity risked per trade
 # which left ~85% of capital idle.
 MAX_POSITION_PCT = 0.15
 
+# ── Cash Sweep (T-bill ETF) ──────────────────────────────────────────────────
+# Idle cash is parked in a 0-3 month T-bill ETF instead of sitting at 0%. It is
+# NOT a strategy position: excluded from slots, sector caps, stops and
+# trades.csv, and booked in cash_sweep.jsonl (see cash_sweep.py).
+# Each evening after the scan (tomorrow's entries are known), cash is set to
+# tomorrow's entry cost + CASH_BUFFER_PCT of equity: the shortfall is sold after
+# hours, or spare cash above CASH_SWEEP_BAND_PCT is bought. The 09:25 execute
+# sells any remaining shortfall pre-market before the entries go in.
+# Backtest (research/strategy_review_2026_09/sweep_tbill2.py, BIL for SGOV):
+# +1.6 pts/yr at 2023-26 rates, +0.5 over 2011-26; SGOV spread ~1 bp even after
+# hours. Buying pauses while the ETF's trailing yield is under the gate.
+CASH_SWEEP_ENABLED   = True
+CASH_SWEEP_SYMBOL    = "SGOV"
+CASH_BUFFER_PCT      = 0.02
+CASH_SWEEP_BAND_PCT  = 0.05
+CASH_SWEEP_MIN_YIELD = 0.01
+
 # ── Limit Order Slippage Controls ─────────────────────────────────────────────
 ENTRY_LIMIT_PCT = 0.005      # Max we'll pay above prior close for a LOO buy (0.5%)
 EXIT_LIMIT_PCT  = 0.005      # Min we'll accept below prior close for a LOO sell (0.5%)

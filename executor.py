@@ -163,8 +163,22 @@ def is_trading_day_today() -> bool:
 # ── Position Checks ───────────────────────────────────────────────────────────
 
 def get_alpaca_positions() -> dict:
-    """Returns {symbol: position_object} for all open Alpaca positions."""
-    return {p.symbol: p for p in _client.get_all_positions()}
+    """Returns {symbol: position_object} for the strategy's open positions.
+
+    The cash-sweep holding (config.CASH_SWEEP_SYMBOL) is left out: it is parked
+    cash, not a trade, and must never take a slot, count toward a sector cap,
+    or look like a position that lost its stop. See cash_sweep.py.
+    """
+    return {p.symbol: p for p in _client.get_all_positions()
+            if p.symbol != config.CASH_SWEEP_SYMBOL}
+
+
+def get_sweep_position():
+    """The cash-sweep holding at the broker, or ``None``."""
+    for p in _client.get_all_positions():
+        if p.symbol == config.CASH_SWEEP_SYMBOL:
+            return p
+    return None
 
 
 def has_position(symbol: str) -> bool:

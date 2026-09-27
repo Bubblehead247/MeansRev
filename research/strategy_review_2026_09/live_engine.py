@@ -131,7 +131,7 @@ def run(prep: dict, p: Params, start: str, end: str, equity0: float = 100_000.0)
     equity = equity0
     positions: dict[str, dict] = {}
     pending: list[tuple] = []           # (symbol, limit, atr, rsi) signalled at the prior close
-    trades, curve, invested = [], [], []
+    trades, curve, invested, cashflow = [], [], [], []
     signals = unfilled = blocked = rejected_cash = 0
 
     for i in range(max(lo, 2), hi):
@@ -220,6 +220,13 @@ def run(prep: dict, p: Params, start: str, end: str, equity0: float = 100_000.0)
             queued.append(cand)
             sec_count[sec] = sec_count.get(sec, 0) + 1
         pending = queued
+        cost_open = sum(q["px"] * q["shares"] for q in positions.values())
+        need = 0.0
+        for sym, limit, sig_atr, _ in queued:
+            sh = min(int(equity * p.risk_per_trade / (p.stop_mult * sig_atr)),
+                     int(equity * p.max_position_pct / limit))
+            need += max(sh, 0) * limit
+        cashflow.append((d, equity - cost_open, need))
 
         # 4. Mark to market
         held = sum(S[s]["c"][i] * q["shares"] for s, q in positions.items() if not np.isnan(S[s]["c"][i]))
@@ -229,7 +236,9 @@ def run(prep: dict, p: Params, start: str, end: str, equity0: float = 100_000.0)
         invested.append(held / mtm if mtm > 0 else 0.0)
 
     eq = pd.Series([v for _, v in curve], index=[k for k, _ in curve])
+    cash = pd.DataFrame(cashflow, columns=["date", "cash", "next_entry_cost"]).set_index("date")
     return {"trades": trades, "equity": eq, "invested": pd.Series(invested, index=eq.index),
+            "cash": cash,
             "signals": signals, "unfilled": unfilled, "blocked": blocked,
             "rejected_cash": rejected_cash}
 

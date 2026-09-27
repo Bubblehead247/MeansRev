@@ -28,6 +28,7 @@ from quantcore.statefile import write_json_atomic
 import config
 import eval_checkpoint
 import executor
+import cash_sweep
 import exit_evidence
 import notifier
 import position_tracker as pt
@@ -399,6 +400,14 @@ def post_close_scan():
         f"{[(p['symbol'], p['action']) for p in _pending]}"
     )
 
+    # Park spare cash in the T-bill ETF / raise tomorrow's entry cash, now that
+    # tomorrow's entries are known. After the queue is saved: a sweep problem
+    # must never cost the scan.
+    try:
+        cash_sweep.evening_rebalance(list(_pending))
+    except Exception as exc:  # noqa: BLE001
+        logger.error(f"Cash sweep (evening) failed: {exc}", exc_info=True)
+
 
 def _check_for_mass_exit(open_positions) -> None:
     """Shout when one scan decides to close the entire book on one reason.
@@ -458,6 +467,15 @@ def pre_open_execute():
         return
 
     logger.info(f"▶  PRE-OPEN EXECUTE | Processing {len(_pending)} action(s)...")
+
+    # Buying power is checked when an order is submitted, so any cash still
+    # parked in the T-bill ETF that the entries need is raised first. A failure
+    # here is logged, not fatal: an unfunded entry is refused by the broker and
+    # logged, as before.
+    try:
+        cash_sweep.fund_entries(list(_pending))
+    except Exception as exc:  # noqa: BLE001
+        logger.error(f"Cash sweep (morning funding) failed: {exc}", exc_info=True)
 
     # Each action is removed from the queue and the queue saved *before* the
     # order is sent, so a retry resumes rather than restarts.
@@ -553,7 +571,14 @@ def status_report():
     try:
         snapshot = executor.get_account_snapshot()
         live_positions = executor.get_alpaca_positions()
-        notifier.send_daily_status(snapshot, live_positions)
+        sweep = None
+        if config.CASH_SWEEP_ENABLED:
+            try:
+                sweep = cash_sweep.report()
+                logger.info(f"STATUS | Cash sweep: {sweep}")
+            except Exception as exc:  # noqa: BLE001
+                logger.error(f"Cash sweep report failed: {exc}", exc_info=True)
+        notifier.send_daily_status(snapshot, live_positions, sweep)
     except Exception as exc:  # noqa: BLE001 - a reporting bug must not break the job
         logger.error(f"Could not send daily status push: {exc}", exc_info=True)
 

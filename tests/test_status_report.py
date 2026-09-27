@@ -47,7 +47,7 @@ def harness(monkeypatch):
     monkeypatch.setattr(main.executor, "get_account_snapshot", lambda: snapshot)
     monkeypatch.setattr(main.executor, "get_alpaca_positions", lambda: {})
     monkeypatch.setattr(main.notifier, "send_daily_status",
-                        lambda snap, pos: pushed.append((snap, pos)))
+                        lambda snap, pos, sweep=None: pushed.append((snap, pos)))
 
     return {"pushed": pushed, "snapshot": snapshot}
 
@@ -86,7 +86,7 @@ def test_a_failed_snapshot_does_not_propagate(monkeypatch, harness):
 
 
 def test_a_failed_push_does_not_propagate(monkeypatch, harness):
-    def _boom(snap, pos):
+    def _boom(snap, pos, sweep=None):
         raise RuntimeError("ntfy is down")
 
     monkeypatch.setattr(main.notifier, "send_daily_status", _boom)

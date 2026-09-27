@@ -1,0 +1,10 @@
+,added_cagr_pts,earned_$,costs_$,trades,trades_per_yr,short_mornings
+"evening, buffer 0%",0.09,20155,16848,2619,166.5,0 (pre-sold)
+"evening, buffer 2%",0.06,19227,16849,3462,220.1,0 (pre-sold)
+"evening, buffer 5%",0.03,17842,16853,3662,232.9,0 (pre-sold)
+"evening, buffer 10%",-0.01,15822,16458,3156,200.7,0 (pre-sold)
+"evening, buffer 2%, 10 bp cost",-1.07,13890,52575,2974,189.1,0 (pre-sold)
+fixed buffer 0%,0.09,20155,16848,2619,166.5,1125/1125
+fixed buffer 15%,-0.01,16009,16513,3445,219.1,1024/1125
+fixed buffer 30%,-0.06,12008,14259,3065,194.9,437/1125
+fixed buffer 45%,-0.08,8284,11275,2644,168.1,213/1125

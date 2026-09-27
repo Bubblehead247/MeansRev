@@ -137,8 +137,9 @@ def send_error(detail: str):
     )
 
 
-def send_daily_status(snapshot: dict, positions: dict):
-    """Push the daily account summary: equity, P&L, and every open position.
+def send_daily_status(snapshot: dict, positions: dict, sweep: dict | None = None):
+    """Push the daily account summary: equity, P&L, every open position, and
+    what the T-bill cash sweep has earned (``cash_sweep.report()``) when active.
 
     Routine, not urgent — priority 3, same tier as :func:`send_warning` and
     :func:`send_checkpoint`. ``[PAPER]`` is prefixed to the title whenever
@@ -172,6 +173,15 @@ def send_daily_status(snapshot: dict, positions: dict):
                 f"{float(pos.unrealized_pl):+,.2f} "
                 f"({float(pos.unrealized_plpc) * 100:+.2f}%)"
             )
+    if sweep and sweep.get("trades"):
+        lines += [
+            "",
+            f"Cash sweep ({config.CASH_SWEEP_SYMBOL}): ${sweep['holding_value']:,.2f} held | "
+            f"earned {sweep['total']:+,.2f} since {sweep['since']} "
+            f"(price {sweep['realized'] + sweep['unrealized']:+,.2f}, "
+            f"dividends {sweep['dividends']:+,.2f})"
+            + ("" if sweep["ledger_matches_broker"] else " | LEDGER MISMATCH"),
+        ]
 
     title = f"{'[PAPER] ' if config.PAPER else ''}\U0001f4ca DAILY STATUS"
     _push("daily status", title, "\n".join(lines), 3, ["bar_chart"])

@@ -19,6 +19,8 @@ from pathlib import Path
 
 import pytest
 
+import cash_sweep
+import config
 import executor
 import meansrev_main as main
 import position_tracker as pt
@@ -52,6 +54,15 @@ def _no_live_state(monkeypatch, tmp_path):
 
 def _no_such_order(client_order_id):
     raise LookupError(f"no order {client_order_id} (test stub)")
+
+
+@pytest.fixture(autouse=True)
+def _no_live_cash_sweep(monkeypatch, tmp_path):
+    """The scan, execute and status jobs call cash_sweep, which trades the T-bill
+    ETF on the paper account. Off in every test unless a test turns it on, and
+    its ledger always points at a temp file."""
+    monkeypatch.setattr(config, "CASH_SWEEP_ENABLED", False)
+    monkeypatch.setattr(cash_sweep, "LEDGER_FILE", tmp_path / "cash_sweep.jsonl")
 
 
 @pytest.fixture(autouse=True)
