@@ -46,11 +46,18 @@ LOG_FILE = Path(__file__).resolve().parent / "bot.log"
 
 
 def _configure_logging():
+    # UTF-8, not the Windows default (cp1252). Under Task Scheduler every line
+    # with an emoji — 📥 BUY LIMIT, 🔄 FALLBACK SELL, ✅ Fill confirmed — failed
+    # to encode and was dropped, so no order ID reached bot.log from at least
+    # 2026-08-07 on. Lines written before this change are cp1252; readers must
+    # decode with errors="replace".
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(errors="backslashreplace")
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
         handlers=[
-            logging.FileHandler(LOG_FILE),
+            logging.FileHandler(LOG_FILE, encoding="utf-8"),
             logging.StreamHandler(),
         ],
     )

@@ -19,6 +19,7 @@ from pathlib import Path
 
 import pytest
 
+import executor
 import meansrev_main as main
 import position_tracker as pt
 import trade_log
@@ -47,6 +48,21 @@ def _no_live_state(monkeypatch, tmp_path):
     redirect_live_state(monkeypatch, tmp_path)
     for attribute, filename in PROJECT_STATE_PATHS:
         monkeypatch.setattr(main, attribute, tmp_path / filename)
+
+
+def _no_such_order(client_order_id):
+    raise LookupError(f"no order {client_order_id} (test stub)")
+
+
+@pytest.fixture(autouse=True)
+def _no_live_order_lookup(monkeypatch):
+    """``executor._submit`` looks every order up by client id before sending it.
+
+    ``executor._client`` is a real TradingClient, so without this stub every
+    test that submits an order would query the live paper account. Tests that
+    need an existing order patch it themselves.
+    """
+    monkeypatch.setattr(executor._client, "get_order_by_client_id", _no_such_order)
 
 
 def unguarded_project_paths() -> list[str]:

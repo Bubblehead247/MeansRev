@@ -153,7 +153,7 @@ def parse_log_for_exit_reasons() -> dict:
         r"(\d{4}-\d{2}-\d{2}).*SELL ORDER submitted \| (\S+) .*Reason=(\S+)"
     )
     reasons = {}
-    with open(LOG_FILE) as f:
+    with open(LOG_FILE, encoding="utf-8", errors="replace") as f:
         for line in f:
             m = pattern.search(line)
             if m:
@@ -182,7 +182,7 @@ def read_log_tail(n: int = 50) -> list[str]:
     """Last N lines of bot.log."""
     if not LOG_FILE.exists():
         return []
-    with open(LOG_FILE) as f:
+    with open(LOG_FILE, encoding="utf-8", errors="replace") as f:
         lines = f.readlines()
     return lines[-n:]
 

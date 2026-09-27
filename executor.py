@@ -13,6 +13,7 @@ The hard stop sits on Alpaca's servers — it executes even if this bot crashes.
 """
 import logging
 import time
+import uuid
 from datetime import date, datetime, timezone
 
 from alpaca.trading.client import TradingClient
@@ -42,6 +43,85 @@ _client = TradingClient(config.API_KEY, config.SECRET_KEY, paper=config.PAPER)
 #: a quote taken before the order was even sent.
 _FILL_POLL_TRIES = 5
 _FILL_POLL_SECONDS = 1.0
+
+#: How many polls ``await_fill`` allows for a market order to fill completely.
+#: A 248-share XLV sell took ~3 s from submit to its last fill on 2026-09-08,
+#: close to the old 5-poll limit, so this leaves real headroom.
+_FILL_WAIT_TRIES = 30
+
+
+# ── Order submission ──────────────────────────────────────────────────────────
+
+#: Order kinds that happen at most once per symbol per trading day. Their id is
+#: fixed for the day, so a second submitter running this code finds the first
+#: order instead of placing another. Stops are not in this set: a stop can be
+#: re-placed the same day, so each one gets a fresh id.
+_ONCE_PER_DAY = {"entry", "exit", "fallback"}
+
+_DEAD_STATUSES = ("canceled", "expired", "rejected")
+
+
+def _client_order_id(kind: str, symbol: str, day: date | None = None) -> str:
+    """The id for one order, readable in the broker's order list."""
+    if kind in _ONCE_PER_DAY:
+        return f"mr-{kind}-{symbol}-{(day or date.today()):%Y%m%d}"
+    return f"mr-{kind}-{symbol}-{uuid.uuid4().hex[:12]}"
+
+
+def _find_order(client_order_id: str):
+    """The broker's order with this client id, or ``None`` if there is none."""
+    try:
+        return _client.get_order_by_client_id(client_order_id)
+    except Exception:
+        return None
+
+
+def _is_dead(order) -> bool:
+    status = str(getattr(order, "status", "")).lower()
+    return any(dead in status for dead in _DEAD_STATUSES)
+
+
+def _submit(request):
+    """Submit an order at most once.
+
+    On 2026-08-31 two identical 124-share XLV buys reached the broker 3.1 s
+    apart and MeansRev held double its intended position. The bot's own run
+    placed the first; the second came after that run had already finished, from
+    a submitter that was never identified. Every request now carries a
+    ``client_order_id`` (fixed for the day for entries and exits), and it is
+    looked up before submitting: an existing live or filled order is used
+    instead of placing another. The lookup is repeated when submit reports an
+    error, since the order may have gone out anyway (alpaca-py silently re-sends
+    after a 429 or 504).
+
+    An order found in a dead state (canceled, expired, rejected) is never
+    returned as if it were working — for a stop that would record protection the
+    exchange does not have — so that case raises.
+    """
+    cid = request.client_order_id
+    existing = _find_order(cid)
+    if existing is not None:
+        if _is_dead(existing):
+            raise RuntimeError(
+                f"{request.symbol}: order {cid} already exists and is "
+                f"{existing.status}; not placing it again today"
+            )
+        logger.warning(
+            f"{request.symbol}: order {cid} is already at the broker "
+            f"(ID={existing.id}, {existing.status}). Using it, not placing another."
+        )
+        return existing
+    try:
+        return _client.submit_order(request)
+    except Exception as e:
+        order = _find_order(cid)
+        if order is None or _is_dead(order):
+            raise
+        logger.warning(
+            f"{request.symbol}: submit reported an error ({e}), but order "
+            f"{cid} reached the broker (ID={order.id}). Using it."
+        )
+        return order
 
 
 # ── Account ───────────────────────────────────────────────────────────────────
@@ -120,11 +200,12 @@ def submit_entry(scan_result: dict) -> bool:
 
     try:
         limit_price = round(est_entry * (1 + config.ENTRY_LIMIT_PCT), 2)
-        order = _client.submit_order(
+        order = _submit(
             LimitOrderRequest(
                 symbol=symbol,
                 qty=shares,
                 side=OrderSide.BUY,
+                client_order_id=_client_order_id("entry", symbol),
                 # DAY, not OPG. Auction-only orders got one chance at the open
                 # and 8 of 9 produced no usable fill — four gapped through the
                 # limit, and five had the open comfortably inside the limit and
@@ -360,11 +441,12 @@ def confirm_exit_fills():
         )
         try:
             pos_data = pt.get(symbol)
-            fallback = _client.submit_order(
+            fallback = _submit(
                 MarketOrderRequest(
                     symbol=symbol,
                     qty=shares,
                     side=OrderSide.SELL,
+                    client_order_id=_client_order_id("fallback", symbol),
                     time_in_force=TimeInForce.DAY,
                 )
             )
@@ -497,12 +579,17 @@ def get_fills(symbol: str, side: str, on_date: date | None = None) -> list[dict]
     return out
 
 
-def await_fill(order_id: str, tries: int = _FILL_POLL_TRIES) -> tuple[float, float] | None:
-    """Wait briefly for an order to fill, and return ``(qty, price)``.
+def await_fill(order_id: str, tries: int = _FILL_WAIT_TRIES) -> tuple[float, float] | None:
+    """Wait briefly for an order to fill completely, and return ``(qty, price)``.
 
     Returns ``None`` if it has not filled in time. The caller must then leave the
     position alone rather than booking a guessed price — a market order at 09:45
     normally fills in well under a second, so not filling is real news.
+
+    Only a completely filled order counts. This used to return on the first
+    shares filled, and the caller then booked whatever had filled by that
+    moment: XLV's fallback sells on 2026-09-08 and 09-18 were written as 192 of
+    248 and 32 of 126 shares while the rest was still filling.
     """
     for attempt in range(tries):
         try:
@@ -512,11 +599,11 @@ def await_fill(order_id: str, tries: int = _FILL_POLL_TRIES) -> tuple[float, flo
             return None
         qty = getattr(order, "filled_qty", None)
         price = getattr(order, "filled_avg_price", None)
-        if qty and price and float(qty) > 0:
-            return float(qty), float(price)
         status = str(getattr(order, "status", "")).lower()
+        if status.endswith("filled") and "partially" not in status and qty and price:
+            return float(qty), float(price)
         if any(dead in status for dead in ("canceled", "expired", "rejected")):
-            logger.warning(f"Order {order_id} ended {status} without filling.")
+            logger.warning(f"Order {order_id} ended {status} without filling completely.")
             return None
         if attempt < tries - 1:
             time.sleep(_FILL_POLL_SECONDS)
@@ -553,11 +640,12 @@ def get_filled_qty(symbol: str, side: str) -> float | None:
 def _place_stop_order(symbol: str, stop_price: float, shares: int) -> str | None:
     """Place a GTC hard stop (sell) order on the exchange."""
     try:
-        order = _client.submit_order(
+        order = _submit(
             StopOrderRequest(
                 symbol=symbol,
                 qty=shares,
                 side=OrderSide.SELL,
+                client_order_id=_client_order_id("stop", symbol),
                 time_in_force=TimeInForce.GTC,
                 stop_price=round(stop_price, 2),
             )
@@ -592,11 +680,12 @@ def submit_exit(symbol: str, reason: str = "signal", close_price: float = 0.0) -
         limit_price = round(close_price * (1 - config.EXIT_LIMIT_PCT), 2) if close_price > 0 else None
 
         if limit_price:
-            order = _client.submit_order(
+            order = _submit(
                 LimitOrderRequest(
                     symbol=symbol,
                     qty=shares,
                     side=OrderSide.SELL,
+                    client_order_id=_client_order_id("exit", symbol),
                     time_in_force=TimeInForce.OPG,  # LOO — Limit on Open
                     limit_price=limit_price,
                 )
@@ -607,11 +696,12 @@ def submit_exit(symbol: str, reason: str = "signal", close_price: float = 0.0) -
             )
         else:
             logger.warning(f"{symbol}: No close price for limit exit — submitting market OPG sell.")
-            order = _client.submit_order(
+            order = _submit(
                 MarketOrderRequest(
                     symbol=symbol,
                     qty=shares,
                     side=OrderSide.SELL,
+                    client_order_id=_client_order_id("exit", symbol),
                     time_in_force=TimeInForce.OPG,
                 )
             )
