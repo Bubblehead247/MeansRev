@@ -194,3 +194,54 @@ are small and not significant. Step 2, as the slot ranking:
 
 None beats the live order. It puts broad index ETFs first, and those revert
 best; ranking by stretch swaps in more sector funds.
+
+## Deep dive (2026-09-27): what else could improve MeansRev — `sweep_deep.py`, `sweep_wave3.py`, `sweep_vix.py`, `risk_compare.py`
+
+All on the live config (option C + 10-day stop), yfinance 2011-26 with halves,
+and Alpaca 2020-26. Years = calendar years beating the live config.
+
+| Variant | CAGR 11-26 | 11-18 | 19-26 | Alpaca 20-26 | Max DD | Avg trade | Years won (yf / Alpaca) |
+|---|---|---|---|---|---|---|---|
+| Live config | 6.30% | 3.22% | 9.59% | 10.17% | -11.4% | 0.38% | - |
+| Exit: first close RSI(2) > 70 | 5.68% | 3.40% | 8.09% | 9.20% | -11.1% | 0.33% | 7/16, 3/7 |
+| Exit: first close RSI(2) > 50 | 3.57% | 1.77% | 5.48% | 6.40% | -10.8% | 0.19% | 3/16, 1/7 |
+| Exit: close > 5-day avg (Connors) | 4.22% | 1.86% | 6.72% | 7.51% | -10.9% | 0.23% | 3/16, 1/7 |
+| Exit: close > 10-day avg | 4.75% | 2.82% | 6.79% | 7.86% | -13.1% | 0.29% | 3/16, 1/7 |
+| Exit: close > prior day's high | 4.59% | 2.74% | 6.54% | 7.28% | -11.1% | 0.25% | 5/16, 1/7 |
+| Hold: RSI falls back below 60 | 5.72% | 2.90% | 8.74% | 9.45% | -11.4% | 0.32% | 5/16, 2/7 |
+| Hold: RSI falls back below 80 | 5.29% | 3.00% | 7.73% | 8.32% | -14.4% | 0.34% | 5/16, 2/7 |
+| Hold: time stop only | 3.96% | 2.25% | 5.77% | 6.32% | -13.6% | 0.27% | 5/16, 1/7 |
+| Entry limit: close - 0.5 ATR | 3.96% | 3.25% | 4.73% | 4.70% | -9.8% | 0.38% | 4/16, 0/7 |
+| Entry limit: close - 1% | 4.20% | 1.45% | 7.12% | 7.30% | -9.9% | 0.56% | 5/16, 2/7 |
+| Entry limit: close - 2% | 2.13% | -0.23% | 4.68% | 4.94% | -8.9% | 0.64% | 4/16, 2/7 |
+| Trade at the signal close | 4.94% | 2.91% | 7.14% | 7.37% | -13.8% | 0.27% | 5/16, 3/7 |
+| No hard stop | 4.86% | 1.70% | 8.21% | 8.57% | -15.5% | 0.33% | 8/16, 4/7 |
+| Trend: SMA100 | 4.03% | 1.80% | 6.37% | 7.15% | -10.0% | 0.27% | 5/16, 2/7 |
+| Trend: SPY > 200-day (market) | 5.25% | 2.50% | 8.18% | 9.06% | -12.4% | 0.28% | 7/16, 4/7 |
+| Trend: own AND SPY > 200-day | 5.72% | 4.36% | 7.15% | 7.30% | -7.9% | 0.38% | 4/16, 1/7 |
+| Trend: none | 7.26% | 3.50% | 11.40% | 11.31% | -19.1% | 0.36% | 9/16, 5/7 |
+| Scale-in: 2nd unit on a lower close | 6.51% | 3.05% | 10.20% | 10.53% | -14.3% | 0.52% | 10/16, 4/7 |
+| 8 positions x 12% | 5.97% | 3.32% | 8.79% | 9.24% | -9.8% | 0.38% | 4/16, 1/7 |
+| +10 ETFs (IEF LQD HYG SMH KRE ITB GDX EWJ EWZ FXI) | 5.73% | 2.47% | 9.22% | 9.83% | -10.6% | 0.31% | 7/16, 2/7 |
+| VIX >= 5% above its 10-day avg | 4.48% | 2.33% | 6.75% | 6.88% | -10.5% | 0.42% | 5/16, 3/7 |
+| VIX >= 10% above its 10-day avg | 4.45% | 3.29% | 5.67% | 5.78% | -8.9% | 0.58% | 5/16, 1/7 |
+
+Reading: the live rules sit at a local optimum. Classic Connors exits, entry
+limits below the close, VIX filters and trading at the close all raise the
+average trade or cut trades, but lose more in fills than they gain. Only "no
+trend filter" (+1 pt, DD -19%) and "scale-in" (+0.2 pt, DD -14%) beat it,
+both by adding risk.
+
+Idle cash and a SPY core (`risk_compare.py`, `sweep_wave3.py`):
+
+| Portfolio | CAGR 11-26 | Max DD | Sharpe | CAGR / DD |
+|---|---|---|---|---|
+| MeansRev live config | 6.30% | -11.4% | 0.65 | 0.55 |
+| + idle cash in T-bills (live sweep) | 6.69% | -10.9% | - | - |
+| + idle cash in SPY | 12.42% | -30.0% | - | - |
+| 70% MeansRev / 30% SPY (daily rebalanced) | 8.83% | -12.8% | 0.81 | 0.69 |
+| 50% MeansRev / 50% SPY | 10.44% | -19.0% | 0.83 | 0.55 |
+| SPY buy and hold | 14.14% | -33.7% | 0.78 | 0.42 |
+
+Correlation MeansRev vs SPY daily returns 0.53; in SPY's worst months MeansRev
+made +3.8% (Mar 2020), -3.9% (Dec 2018), -2.4/-0.7/-2.9% (2022).

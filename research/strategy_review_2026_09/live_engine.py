@@ -113,6 +113,9 @@ def prepare(bars: dict[str, pd.DataFrame]) -> dict:
                        .reindex(idx) / c).values,
             "ret5":   (c / c.shift(5) - 1).values,
             "dist200": (c / sma(c.dropna(), config.SMA_DAILY_TREND).reindex(idx) - 1).values,
+            "sma5":   sma(c.dropna(), 5).reindex(idx).values,
+            "sma10":  sma(c.dropna(), 10).reindex(idx).values,
+            "sma100": sma(c.dropna(), 100).reindex(idx).values,
         }
     return out
 
@@ -138,6 +141,32 @@ class Params:
     rank: str = "symbol_order"          # or a key in RANKS
     slip: float = config.SLIPPAGE_PCT
     exit_extra_slip: float = 0.0
+    # ── deep-dive options (defaults = live behaviour) ──
+    exit_mode: str = "rsi_crossback"    # rsi_above | close_above_sma5 | close_above_sma10 | higher_close
+    entry_limit_atr: float | None = None  # limit = close - k x ATR (overrides entry_limit_pct)
+    hard_stop: bool = True              # False: no stop exits (sizing still uses stop_mult)
+    trend: str = "sma200"               # sma200 | sma100 | none
+    on_close: bool = False              # signal and fill at the same close (MOC-style)
+    vix_min_stretch: float | None = None  # enter only if VIX close >= its 10-day avg x (1 + this)
+    scale_in: bool = False              # Connors-TPS style: a 2nd unit when a held position closes lower still oversold
+
+
+def _exit_signal(p: Params, x: dict, j: int) -> bool:
+    """Exit decided at bar j's close (live: RSI(2) crosses back below rsi_exit)."""
+    r = x["rsi2"]
+    if p.exit_mode == "rsi_crossback":
+        return r[j - 1] >= p.rsi_exit and r[j] < p.rsi_exit
+    if p.exit_mode == "none":
+        return False
+    if p.exit_mode == "rsi_above":
+        return r[j] > p.rsi_exit
+    if p.exit_mode == "close_above_sma5":
+        return x["c"][j] > x["sma5"][j]
+    if p.exit_mode == "close_above_sma10":
+        return x["c"][j] > x["sma10"][j]
+    if p.exit_mode == "higher_close":
+        return x["c"][j] > x["h"][j - 1]
+    raise ValueError(p.exit_mode)
 
 
 def run(prep: dict, p: Params, start: str, end: str, equity0: float = 100_000.0) -> dict:
@@ -156,8 +185,11 @@ def run(prep: dict, p: Params, start: str, end: str, equity0: float = 100_000.0)
     for i in range(max(lo, 2), hi):
         d = dates[i]
         # 1. Entries from yesterday's scan: DAY limit at prior close x (1 + pct)
-        for sym, limit, sig_atr, _ in pending:
+        for sym, limit, sig_atr, _, *flag in pending:
             x = S[sym]
+            is_add = bool(flag)
+            if is_add and sym not in positions:
+                continue
             op, low = x["o"][i], x["l"][i]
             if np.isnan(op) or np.isnan(low):
                 continue
@@ -180,6 +212,12 @@ def run(prep: dict, p: Params, start: str, end: str, equity0: float = 100_000.0)
             if px * shares > cash:
                 rejected_cash += 1
                 continue
+            if is_add:
+                pos = positions[sym]
+                pos["px"] = (pos["px"] * pos["shares"] + px * shares) / (pos["shares"] + shares)
+                pos["shares"] += shares
+                pos["units"] = 2
+                continue
             positions[sym] = {"entry_i": i, "entry_date": d, "px": px,
                               "stop": px - stop_dist, "shares": shares}
         pending = []
@@ -191,12 +229,15 @@ def run(prep: dict, p: Params, start: str, end: str, equity0: float = 100_000.0)
             if np.isnan(op) or np.isnan(low):
                 continue
             reason = px = None
-            if i > pos["entry_i"] and (dates[i - 1] - pos["entry_date"]).days >= p.max_hold_days:
-                reason, px = "time_stop", op * (1 - p.slip - p.exit_extra_slip)
-            elif (i - 1 > pos["entry_i"] and x["rsi2"][i - 2] >= p.rsi_exit
-                  and x["rsi2"][i - 1] < p.rsi_exit):
-                reason, px = "rsi_exit", op * (1 - p.slip - p.exit_extra_slip)
-            elif low <= pos["stop"]:
+            j = i if p.on_close else i - 1               # the bar the exit is decided on
+            fill = (x["c"][i] if p.on_close else op) * (1 - p.slip - p.exit_extra_slip)
+            if p.hard_stop and i > pos["entry_i"] and low <= pos["stop"] and p.on_close:
+                reason, px = "hard_stop", min(pos["stop"], op) * (1 - p.slip)
+            elif j >= pos["entry_i"] and (dates[j] - pos["entry_date"]).days >= p.max_hold_days:
+                reason, px = "time_stop", fill
+            elif j > pos["entry_i"] and _exit_signal(p, x, j):
+                reason, px = "signal_exit", fill
+            elif p.hard_stop and not p.on_close and low <= pos["stop"]:
                 reason, px = "hard_stop", min(pos["stop"], op) * (1 - p.slip)
             if reason:
                 pnl = (px - pos["px"]) * pos["shares"]
@@ -219,15 +260,27 @@ def run(prep: dict, p: Params, start: str, end: str, equity0: float = 100_000.0)
             r, c, s2, a = x["rsi2"][i], x["c"][i], x["sma200"][i], x["atr14"][i]
             if np.isnan(r) or np.isnan(c) or np.isnan(s2) or np.isnan(a):
                 continue
-            if not (r < p.rsi_entry and c > s2):
+            if p.trend == "none":
+                tr_ok = True
+            elif p.trend in ("spy", "own_and_spy"):
+                spy = S.get("SPY") or prep["sym"]["SPY"]
+                tr_ok = spy["c"][i] > spy["sma200"][i] and (p.trend == "spy" or c > s2)
+            else:
+                tr_ok = c > (s2 if p.trend == "sma200" else x["sma100"][i])
+            if not (r < p.rsi_entry and tr_ok):
                 continue
+            if p.vix_min_stretch is not None:
+                vx = prep["vix"]
+                if not (vx["c"][i] >= vx["sma10"][i] * (1 + p.vix_min_stretch)):
+                    continue
             if p.regime_filter:
                 w = x["wadx"][i]
                 if x["wcount"][i] < config.SMA_WEEKLY_SLOW + 10 or np.isnan(w):
                     continue
                 if not (p.adx_min <= w < p.adx_max):
                     continue
-            cands.append((s, c * (1 + p.entry_limit_pct), a, r))
+            limit = c - p.entry_limit_atr * a if p.entry_limit_atr is not None else c * (1 + p.entry_limit_pct)
+            cands.append((s, limit, a, r))
         if p.rank == "reverse_order":
             cands.reverse()
         elif p.rank == "track_record":
@@ -249,12 +302,30 @@ def run(prep: dict, p: Params, start: str, end: str, equity0: float = 100_000.0)
             if len(positions) + len(queued) >= p.max_positions or sec_count.get(sec, 0) >= p.max_per_sector:
                 blocked += 1
                 continue
-            queued.append(cand)
+            if p.on_close:
+                # fill now, at this close
+                sym, _, sig_atr, _ = cand
+                px = S[sym]["c"][i] * (1 + p.slip)
+                sh = min(int(equity * p.risk_per_trade / (p.stop_mult * sig_atr)),
+                         int(equity * p.max_position_pct / px))
+                cash = equity - sum(q["px"] * q["shares"] for q in positions.values())
+                if sh <= 0 or px * sh > cash:
+                    rejected_cash += sh > 0
+                    continue
+                positions[sym] = {"entry_i": i, "entry_date": d, "px": px,
+                                  "stop": px - p.stop_mult * sig_atr, "shares": sh}
+            else:
+                queued.append(cand)
             sec_count[sec] = sec_count.get(sec, 0) + 1
+        if p.scale_in and not p.on_close:
+            for s, pos in positions.items():
+                x = S[s]
+                if pos.get("units", 1) < 2 and x["rsi2"][i] < p.rsi_entry and x["c"][i] < pos["px"]                         and not np.isnan(x["atr14"][i]):
+                    queued.append((s, x["c"][i] * (1 + p.entry_limit_pct), x["atr14"][i], x["rsi2"][i], "add"))
         pending = queued
         cost_open = sum(q["px"] * q["shares"] for q in positions.values())
         need = 0.0
-        for sym, limit, sig_atr, _ in queued:
+        for sym, limit, sig_atr, _, *flag in queued:
             sh = min(int(equity * p.risk_per_trade / (p.stop_mult * sig_atr)),
                      int(equity * p.max_position_pct / limit))
             need += max(sh, 0) * limit

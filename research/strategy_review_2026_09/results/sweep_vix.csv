@@ -1,0 +1,6 @@
+,CAGR 11-26,11-18,19-26,Alpaca 20-26,DD,trades,avg trade %,invested %,yrs beat yf,yrs beat al
+live config,6.3,3.22,9.59,10.17,-11.4,1853,0.38,38.7,-,-
+VIX >= its 10-day avg,5.01,2.13,8.09,8.67,-10.8,1495,0.37,31.1,4/16,2/7
+VIX >= 5% above its 10-day avg,4.48,2.33,6.75,6.88,-10.5,1144,0.42,24.0,5/16,3/7
+VIX >= 10% above its 10-day avg,4.45,3.29,5.67,5.78,-8.9,832,0.58,17.2,5/16,1/7
+SPY buy and hold (reference),14.14,,,,-33.7,,,,,
