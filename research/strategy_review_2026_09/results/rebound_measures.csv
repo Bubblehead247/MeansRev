@@ -1,0 +1,10 @@
+measure,trades,most-least stretched 2011-18 (pts),most-least stretched 2019-26 (pts),most-least stretched all (pts),spearman,p
+% below 5-day average,1853,-0.11,1.38,0.72,0.093,0.0
+ConnorsRSI,1853,-0.06,0.9,0.41,0.065,0.005
+rank of today's return (100 days),1853,-0.28,0.8,0.24,0.055,0.018
+IBS (close in day's range),1853,0.54,0.19,0.29,0.045,0.052
+"stretch: 10-day high to close, in ATRs",1853,0.32,0.4,0.29,0.033,0.158
+RSI(2),1853,-0.28,0.44,0.1,0.032,0.163
+down streak (days),1853,0.39,-0.07,0.09,0.024,0.301
+20-day z-score,1853,0.15,0.29,0.17,0.017,0.458
+"cumulative RSI(2), 2 days",1853,0.45,0.29,0.38,0.016,0.488

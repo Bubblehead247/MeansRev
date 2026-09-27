@@ -162,3 +162,35 @@ But past results don't persist: dropping the tickers that lost in 2011-18
 (IJH, XLE, GLD, ... later winners) cut 2019-26 from 9.59% to 7.55% and Alpaca
 from 10.17% to 8.25%; demoting or re-ordering by 2011-18 results was a coin
 flip. Keep the universe and the order.
+
+## Rebound measures instead of the 52-week high (`rebound_measures.py`, `sweep_rebound_rank.py`)
+
+Measures of "how stretched", all at the signal close. Step 1, trades split
+into fifths by each measure: most minus least stretched fifth, average trade.
+
+| Measure | 2011-18 | 2019-26 | All | Spearman (p) |
+|---|---|---|---|---|
+| % below 5-day average | -0.11 | +1.38 | +0.72 | 0.093 (0.000) |
+| ConnorsRSI | -0.06 | +0.90 | +0.41 | 0.065 (0.005) |
+| Rank of today's return (100 d) | -0.28 | +0.80 | +0.24 | 0.055 (0.018) |
+| IBS | +0.54 | +0.19 | +0.29 | 0.045 (0.052) |
+| Stretch: 10-day high to close in ATRs | +0.32 | +0.40 | +0.29 | 0.033 (0.158) |
+| RSI(2) | -0.28 | +0.44 | +0.10 | 0.032 (0.163) |
+| Down streak | +0.39 | -0.07 | +0.09 | 0.024 (0.301) |
+| 20-day z-score | +0.15 | +0.29 | +0.17 | 0.017 (0.458) |
+| Cumulative RSI(2), 2 days | +0.45 | +0.29 | +0.38 | 0.016 (0.488) |
+
+The strongest ones split by regime (nothing in 2011-18); the consistent ones
+are small and not significant. Step 2, as the slot ranking:
+
+| Ranking | CAGR 2011-26 | 2011-18 | 2019-26 | Alpaca 2020-26 | Years beating live (yf / Alpaca) |
+|---|---|---|---|---|---|
+| Symbol order (live) | 6.30% | 3.22% | 9.59% | 10.17% | - |
+| Cumulative RSI(2), 2 days | 6.40% | 3.36% | 9.65% | 10.32% | 7/16, 4/7 |
+| ConnorsRSI | 5.98% | 3.08% | 9.09% | 9.33% | 5/16, 3/7 |
+| 20-day z-score | 5.96% | 2.87% | 9.25% | 9.59% | 5/16, 3/7 |
+| % below 5-day average | 5.90% | 3.14% | 8.83% | 8.97% | 7/16, 3/7 |
+| Stretch in ATRs | 5.85% | 2.81% | 9.10% | 9.52% | 5/16, 2/7 |
+
+None beats the live order. It puts broad index ETFs first, and those revert
+best; ranking by stretch swaps in more sector funds.
