@@ -384,6 +384,14 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if config.USE_TREND_FILTER or config.USE_REGIME_FILTER:
+        # TODO(2026-09-10): this engine doesn't implement the weekly ADX gate
+        # (backtest.py does — see weekly_adx_daily there). Since Option C
+        # (2026-09-27) USE_REGIME_FILTER is False, so this only matters if the
+        # filter is switched back on. Deferred: with the filter cutting
+        # signal volume to ~26%, MAX_POSITIONS/MAX_PER_SECTOR rarely bind, so the
+        # shared-capital/sector-cap dynamics this engine exists for are less
+        # likely to matter right now. Revisit before trusting this tool for
+        # anything that specifically depends on those caps.
         logger.warning("Weekly gate is ON — daily-only engine; results approximate. Use backtest.py.")
 
     prep = prepare(config.SYMBOLS, args.years)
