@@ -295,7 +295,7 @@ def _summarize(trades, equity, init_eq, dates, lo, hi, variant, max_dd):
 def _save(rows, fn):
     if not rows: return
     dd=[r if isinstance(r,dict) else asdict(r) for r in rows]
-    with open(fn,"w",newline="") as f:
+    with open(fn,"w",newline="", encoding="utf-8") as f:
         w=csv.DictWriter(f,fieldnames=dd[0].keys()); w.writeheader(); w.writerows(dd)
     logger.info(f"Saved → {fn} ({len(rows):,} rows)")
 

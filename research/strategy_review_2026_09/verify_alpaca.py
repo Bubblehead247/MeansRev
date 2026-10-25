@@ -10,6 +10,8 @@ import sys
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import os
+BARS_DIR = Path(os.environ.get("MARKET_DATA_DIR", Path(__file__).resolve().parents[3] / "market-data")) / "archive_pickles" / "meansrev_bars"
 
 import pandas as pd
 
@@ -20,7 +22,7 @@ from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
 
-cache = Path("bars_alpaca.pkl")
+cache = BARS_DIR / "bars_alpaca.pkl"
 if cache.exists():
     bars = pickle.loads(cache.read_bytes())
 else:

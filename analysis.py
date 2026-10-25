@@ -33,13 +33,18 @@ import statistics
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import os
+
 import numpy as np
 import pandas as pd
 
 import config
 import backtest as bt
 
-CACHE = Path(__file__).resolve().parent / "_bars_cache.pkl"
+# Shared market-data folder (a sibling of this repo unless MARKET_DATA_DIR is set). Mutable cache:
+# rewritten whenever the request changes, so it carries no .sha256.
+MARKET_DATA = Path(os.environ.get("MARKET_DATA_DIR", Path(__file__).resolve().parent.parent / "market-data"))
+CACHE = MARKET_DATA / "archive_pickles" / "meansrev_bars" / "analysis_bars_cache.pkl"
 
 
 # ── Data ────────────────────────────────────────────────────────────────────
@@ -526,7 +531,7 @@ def _write_csv(name, rows):
     if not rows:
         return
     keys = list(rows[0].keys())
-    with open(name, "w", newline="") as f:
+    with open(name, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=keys)
         w.writeheader()
         for r in rows:

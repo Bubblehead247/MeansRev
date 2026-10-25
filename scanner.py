@@ -45,6 +45,18 @@ _SIP_DELAY = timedelta(minutes=16)
 
 _ET = ZoneInfo("America/New_York")
 
+#: Set only for the duration of a catch-up scan (see ``run_scan``): bars dated
+#: after this session are dropped, so a pre-market run that is handed today's
+#: forming bar still scans the missed session's close.
+_as_of_session: str | None = None
+
+
+def _drop_after_session(bars: pd.DataFrame) -> pd.DataFrame:
+    if _as_of_session is None or bars.empty:
+        return bars
+    idx = bars.index.tz_convert(_ET) if bars.index.tz is not None else bars.index
+    return bars[[d.date().isoformat() <= _as_of_session for d in idx]]
+
 
 def _fetch_bars(symbol: str, timeframe: TimeFrame, calendar_days_back: int) -> pd.DataFrame:
     """Bars from the consolidated (SIP) feed, adjusted for splits AND dividends.
@@ -70,7 +82,7 @@ def _fetch_bars(symbol: str, timeframe: TimeFrame, calendar_days_back: int) -> p
     bars = _data_client.get_stock_bars(request).df
     if isinstance(bars.index, pd.MultiIndex):
         bars = bars.xs(symbol, level="symbol")
-    return _clip_bad_prints(symbol, bars.sort_index())
+    return _clip_bad_prints(symbol, _drop_after_session(bars.sort_index()))
 
 
 def _clip_bad_prints(symbol: str, bars: pd.DataFrame) -> pd.DataFrame:
@@ -358,13 +370,28 @@ def evaluate_symbol(symbol: str) -> dict:
 
 # ── Full Scan ─────────────────────────────────────────────────────────────────
 
-def run_scan() -> dict[str, dict]:
-    """Scan all configured symbols. Returns dict of symbol → evaluation result."""
+def run_scan(expected_date: str | None = None) -> dict[str, dict]:
+    """Scan all configured symbols. Returns dict of symbol → evaluation result.
+
+    ``expected_date`` (ISO) is the session whose close the signals must come from.
+    Left out, that is today in New York, which is right for the 15:30 CT scan. A
+    catch-up scan run before the next open passes the missed session instead;
+    without it every bar would read as stale and all signals would be switched off.
+    """
     logger.info("=" * 60)
     logger.info(f"Post-close scan started | {datetime.now(timezone.utc).isoformat()}")
 
     results = {}
-    today = datetime.now(_ET).date().isoformat()
+    today = expected_date or datetime.now(_ET).date().isoformat()
+    global _as_of_session
+    _as_of_session = expected_date
+    try:
+        return _scan_symbols(results, today)
+    finally:
+        _as_of_session = None
+
+
+def _scan_symbols(results: dict, today: str) -> dict[str, dict]:
     for symbol in config.SYMBOLS:
         try:
             result = evaluate_symbol(symbol)

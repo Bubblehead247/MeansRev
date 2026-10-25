@@ -57,6 +57,7 @@ import json
 import logging
 import os
 import pickle
+from pathlib import Path
 import warnings
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
@@ -129,7 +130,10 @@ MAX_DD_LIMIT    = 25.0         # disqualify if max drawdown exceeds this
 MAX_WIN_RATE    = 80.0         # disqualify above this (almost certainly overfit)
 OOS_DROP_FLAG   = 0.40         # flag if OOS PF drops >40% below IS PF
 
-CACHE_DAILY = "_grid_daily_cache.pkl"
+# Daily yfinance bars live in the shared market-data folder (a sibling of this repo unless
+# MARKET_DATA_DIR is set). Mutable cache: new symbols are added in place, so no .sha256.
+CACHE_DAILY = str(Path(os.environ.get("MARKET_DATA_DIR", Path(__file__).resolve().parent.parent / "market-data"))
+                  / "archive_pickles" / "meansrev_bars" / "grid_daily_cache.pkl")
 CACHE_MTF   = "_grid_mtf_cache.pkl"
 
 
@@ -596,7 +600,7 @@ def load_previous_best():
     for fn in sorted(f for f in os.listdir(".")
                      if f.startswith("backtest_results_") and f.endswith(".json")):
         try:
-            with open(fn) as f:
+            with open(fn, encoding="utf-8") as f:
                 data = json.load(f)
             # Only eligible, full-history combos with a finite PF — never the
             # 999 infinite-PF sentinel from thin 1-trade combos.
@@ -897,7 +901,7 @@ def main():
         "universes": {u["label"]: u for u in universes},
     }
     fn = f"backtest_results_{stamp}.json"
-    with open(fn, "w") as f:
+    with open(fn, "w", encoding="utf-8") as f:
         json.dump(out, f, indent=2, default=str)
     print(f"\n✅ Full results saved → {fn}")
 

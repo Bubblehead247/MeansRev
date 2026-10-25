@@ -14,6 +14,7 @@ Event dates (events/):
   reports market-wide in the 5 sessions after the signal.
 """
 import json
+import os
 import pickle
 from pathlib import Path
 
@@ -37,7 +38,7 @@ ev = Path("events")
 fomc = pd.to_datetime(json.loads((ev / "fomc_decisions.json").read_text()))
 bls = json.loads((ev / "bls_release_dates.json").read_text())
 cpi, nfp = pd.to_datetime(bls["cpi"]), pd.to_datetime(bls["empsit"])
-earn = pd.read_parquet(Path("../../../SeykotaBot/research/2026-10-monthly-review/data/earnings_calendar.parquet"))
+earn = pd.read_parquet(Path(os.environ.get("MARKET_DATA_DIR", Path(__file__).resolve().parents[3] / "market-data")) / "news_events" / "earnings_nasdaq" / "earnings_calendar.parquet")
 earn = earn.dropna(subset=["symbol"])
 per_day = earn.groupby(pd.to_datetime(earn["date"])).size()
 

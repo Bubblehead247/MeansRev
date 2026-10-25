@@ -6,6 +6,8 @@ Extra ETFs chosen before looking at results; appended to the END of the list
 import pickle
 from dataclasses import replace
 from pathlib import Path
+import os
+BARS_DIR = Path(os.environ.get("MARKET_DATA_DIR", Path(__file__).resolve().parents[3] / "market-data")) / "archive_pickles" / "meansrev_bars"
 
 import numpy as np
 import pandas as pd
@@ -27,7 +29,7 @@ def load(path):
     return prep
 
 
-yfp, alp = load("bars_yf_plus.pkl"), load("bars_alpaca_plus.pkl")
+yfp, alp = load(BARS_DIR / "bars_yf_plus.pkl"), load(BARS_DIR / "bars_alpaca_plus.pkl")
 C = le.Params(symbols=list(config.SYMBOLS))
 PLUS = replace(C, symbols=list(config.SYMBOLS) + NEW)
 V = {"live config (27 ETFs)": C, "+10 ETFs (37)": PLUS,

@@ -1,5 +1,5 @@
 """
-eval_checkpoint.py — Paper-trading evaluation checkpoint for the Connors v1.4 config.
+eval_checkpoint.py — Paper-trading evaluation checkpoint for the live RSI(2) config (live since 2026-09-28).
 
 Counts CLOSED trades logged to trades.csv since a baseline (captured when the
 checkpoint was set) and fires a ONE-TIME reminder when 25 new trades accumulate —
@@ -12,7 +12,6 @@ also run it manually:
 
     python eval_checkpoint.py            # progress (N of 25) + checklist if reached
     python eval_checkpoint.py --reset    # re-baseline to the current trade count
-                                         # >> run this right after restarting into v1.4 <<
 """
 import argparse
 import csv
@@ -29,11 +28,13 @@ MARKER     = _HERE / "eval_checkpoint.json"
 TARGET     = 25
 
 CHECKLIST = [
-    "Slippage: realized entry/exit fills within ~5 bps/side of the reference price (edge is cost-fragile).",
-    "Stops: GTC ATR(2.5x) stop placed on every fill and triggers correctly; 7-day time stop fires.",
-    "Signals: live entries/exits match backtest.py for the same dates (no live/backtest drift).",
-    "Caps: MAX_POSITIONS(5) and MAX_PER_SECTOR(2) respected; sizing ~1% risk.",
-    "Stats vs backtest: win ~68%, avg hold ~3-4 days, exit-reason mix sane; realized PF in ~1.1-1.4 band.",
+    "Slippage: buys fill at/near the open (reviewed 2026-10: +0.6 bps vs open); opening-auction sells rarely fill on paper, so judge exits on the 9:45 market fallback (11.9 bps better than the open, n=22). Re-measure.",
+    "Stops: GTC 2.5 ATR stop placed on every fill and triggers correctly; 10-calendar-day time stop fires; RSI(2)>70 exit fires.",
+    "Signals: live entries/exits match backtest.py for the same dates (recompute from SIP bars; matched 19/19 scan days in the 2026-10 review).",
+    "Caps: MAX_POSITIONS(6), MAX_PER_SECTOR(2) and the 15% position cap respected; sizing ~1% risk.",
+    "Scans: one scan per trading day, none lost; any catch-up scan (queue_log.jsonl 'queued' with catch_up) explained.",
+    "Stats vs backtest: PF in the ~1.3-1.4 band, avg trade near +0.3%, win rate high with small wins. 25 trades cannot confirm the edge (t of 0.31%/trade needs ~280 trades); this gate is for execution fidelity only.",
+    "Cash: SGOV sweep ledger matches broker shares; paper dividends are credited only intermittently, so do not count them.",
     "GUARDRAIL: halt and reassess regardless of count if realized drawdown >25% or any stop fails to trigger.",
 ]
 
@@ -42,21 +43,21 @@ def _total_closed() -> int:
     """Closed-trade rows in trades.csv (excludes the header)."""
     if not TRADES_CSV.exists():
         return 0
-    with open(TRADES_CSV, newline="") as f:
+    with open(TRADES_CSV, newline="", encoding="utf-8") as f:
         return max(0, sum(1 for _ in csv.reader(f)) - 1)
 
 
 def _load() -> dict:
     if MARKER.exists():
-        return json.loads(MARKER.read_text())
+        return json.loads(MARKER.read_text(encoding="utf-8"))
     m = {"baseline": _total_closed(), "target": TARGET,
          "notified": False, "set_at": date.today().isoformat()}
-    MARKER.write_text(json.dumps(m, indent=2))
+    MARKER.write_text(json.dumps(m, indent=2), encoding="utf-8")
     return m
 
 
 def _save(m: dict) -> None:
-    MARKER.write_text(json.dumps(m, indent=2))
+    MARKER.write_text(json.dumps(m, indent=2), encoding="utf-8")
 
 
 def progress() -> tuple[int, dict]:
@@ -87,7 +88,7 @@ def check_and_notify() -> dict:
 
 def _print_status() -> None:
     new, m = progress()
-    print(f"Connors v1.4 paper checkpoint: {new}/{m['target']} new closed trades "
+    print(f"Paper checkpoint: {new}/{m['target']} new closed trades "
           f"(baseline {m['baseline']} set {m['set_at']}).")
     if new >= m["target"]:
         print("\n✅ CHECKPOINT REACHED — evaluate EXECUTION FIDELITY (not edge significance):")
@@ -98,9 +99,9 @@ def _print_status() -> None:
 
 
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser(description="Connors v1.4 25-trade evaluation checkpoint")
+    ap = argparse.ArgumentParser(description="25-trade evaluation checkpoint")
     ap.add_argument("--reset", action="store_true",
-                    help="re-baseline to the current trade count (use right after the v1.4 restart)")
+                    help="re-baseline to the current trade count")
     args = ap.parse_args()
     if args.reset:
         m = _load()

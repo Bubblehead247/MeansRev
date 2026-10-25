@@ -2,6 +2,8 @@
 import pickle
 from dataclasses import replace
 from pathlib import Path
+import os
+BARS_DIR = Path(os.environ.get("MARKET_DATA_DIR", Path(__file__).resolve().parents[3] / "market-data")) / "archive_pickles" / "meansrev_bars"
 
 import pandas as pd
 
@@ -14,7 +16,7 @@ for label, cache in [("yf", "prep.pkl"), ("alpaca", None)]:
     if cache:
         prep = pickle.loads(Path(cache).read_bytes())
     else:
-        prep = le.prepare(pickle.loads(Path("bars_alpaca.pkl").read_bytes()))
+        prep = le.prepare(pickle.loads(BARS_DIR / "bars_alpaca.pkl".read_bytes()))
     C = le.Params(symbols=list(config.SYMBOLS))   # config now holds option C
     variants = {
         C_NAME: C,

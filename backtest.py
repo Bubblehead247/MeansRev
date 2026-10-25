@@ -526,7 +526,7 @@ def save_trades_csv(all_trades: list[Trade], filename: str = "backtest_trades.cs
     if not all_trades:
         logger.warning("No trades to save.")
         return
-    with open(filename, "w", newline="") as f:
+    with open(filename, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=asdict(all_trades[0]).keys())
         writer.writeheader()
         writer.writerows([asdict(t) for t in all_trades])
@@ -556,7 +556,7 @@ def save_summary_csv(results: list[BacktestResult], filename: str = "backtest_su
             "weekly_exits":    r.weekly_exits,
             "final_equity":    r.final_equity,
         })
-    with open(filename, "w", newline="") as f:
+    with open(filename, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=rows[0].keys())
         writer.writeheader()
         writer.writerows(rows)

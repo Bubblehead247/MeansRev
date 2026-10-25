@@ -146,6 +146,7 @@ def get_account_snapshot() -> dict:
     return {
         "equity":          float(account.equity),
         "last_equity":     float(account.last_equity),
+        "cash":            float(account.cash),
         "base_value":      float(history["base_value"]),
         "base_value_asof": history["base_value_asof"],
     }
@@ -584,12 +585,22 @@ def get_fills(symbol: str, side: str, on_date: date | None = None) -> list[dict]
     for order in orders:
         if order.side != OrderSide(side.lower()):
             continue
+        # The list endpoint can lag the single-order read: XLV's fallback sell on
+        # 2026-10-09 came back from it as 69 of 74 shares moments after
+        # ``await_fill`` saw it complete, and 89 shares were booked for a
+        # 94-share trade. Re-read each candidate by id, which is authoritative.
+        try:
+            order = _client.get_order_by_id(str(order.id))
+        except Exception as e:
+            logger.warning(f"{symbol}: could not re-read order {order.id}; "
+                           f"using the list snapshot: {e}")
         filled_qty = getattr(order, "filled_qty", None)
         filled_price = getattr(order, "filled_avg_price", None)
         if not filled_qty or not filled_price:
             continue
         when = getattr(order, "filled_at", None) or getattr(order, "updated_at", None)
-        if when is not None and when.date() != want_date:
+        # Alpaca stamps UTC; ``want_date`` is the local trading day.
+        if when is not None and when.astimezone().date() != want_date:
             continue
         out.append({
             "id": str(order.id),

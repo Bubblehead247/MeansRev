@@ -47,7 +47,7 @@ def harness(monkeypatch):
     monkeypatch.setattr(main.executor, "get_account_snapshot", lambda: snapshot)
     monkeypatch.setattr(main.executor, "get_alpaca_positions", lambda: {})
     monkeypatch.setattr(main.notifier, "send_daily_status",
-                        lambda snap, pos, sweep=None: pushed.append((snap, pos)))
+                        lambda snap, pos, sweep=None, queued=None: pushed.append((snap, pos)))
 
     return {"pushed": pushed, "snapshot": snapshot}
 
@@ -95,16 +95,17 @@ def test_a_failed_push_does_not_propagate(monkeypatch, harness):
 
 
 def test_the_title_is_paper_prefixed_in_paper_mode(monkeypatch):
-    """A paper push must never be mistaken for a live account's numbers."""
+    """A paper report must never be mistaken for a live account's numbers."""
     import config
     import notifier
+    from quantcore import report
 
     monkeypatch.setattr(config, "PAPER", True)
-    monkeypatch.setattr(config, "NTFY_TOPIC", "test-topic")
+    monkeypatch.setattr(config, "NTFY_TOPIC", "")
+    monkeypatch.setattr(config, "DISCORD_WEBHOOK_URL", "https://discord.test/hook")
 
     sent = []
-    monkeypatch.setattr(notifier.requests, "post",
-                        lambda url, json, timeout: sent.append(json))
+    monkeypatch.setattr(report, "_post_discord", lambda hook, r, **k: sent.append(r) or True)
 
     notifier.send_daily_status(
         {"equity": 100.0, "last_equity": 100.0, "base_value": 100.0,
@@ -113,4 +114,23 @@ def test_the_title_is_paper_prefixed_in_paper_mode(monkeypatch):
     )
 
     assert len(sent) == 1
-    assert sent[0]["title"].startswith("[PAPER]")
+    assert sent[0].paper is True
+    assert "PAPER" in report.title(sent[0])
+
+
+def test_with_no_webhook_the_report_falls_back_to_ntfy(monkeypatch):
+    import config
+    import notifier
+    from quantcore import report
+
+    monkeypatch.setattr(config, "DISCORD_WEBHOOK_URL", "")
+    monkeypatch.setattr(config, "NTFY_TOPIC", "test-topic")
+    sent = []
+    monkeypatch.setattr(report.alert, "send", lambda topic, t, m, **k: sent.append(topic) or True)
+
+    notifier.send_daily_status(
+        {"equity": 100.0, "last_equity": 100.0, "base_value": 100.0,
+         "base_value_asof": "2026-01-02"},
+        {},
+    )
+    assert sent == ["test-topic"]

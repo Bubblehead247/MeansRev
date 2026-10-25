@@ -26,7 +26,7 @@ STATE_FILE = Path(__file__).resolve().parent / "positions.json"
 
 def _load() -> dict:
     if STATE_FILE.exists():
-        with open(STATE_FILE) as f:
+        with open(STATE_FILE, encoding="utf-8") as f:
             return json.load(f)
     return {}
 
@@ -200,17 +200,17 @@ def get_stop_order_id(symbol: str) -> str | None:
     return pos.get("stop_order_id") if pos else None
 
 
-def days_open(symbol: str) -> int:
-    """Returns calendar days since entry."""
+def days_open(symbol: str, as_of: date | None = None) -> int:
+    """Returns calendar days since entry (as of today unless ``as_of`` is given)."""
     pos = get(symbol)
     if not pos:
         return 0
     entry = date.fromisoformat(pos["entry_date"])
-    return (date.today() - entry).days
+    return ((as_of or date.today()) - entry).days
 
 
-def time_stop_triggered(symbol: str) -> bool:
-    return days_open(symbol) >= config.MAX_HOLD_DAYS
+def time_stop_triggered(symbol: str, as_of: date | None = None) -> bool:
+    return days_open(symbol, as_of) >= config.MAX_HOLD_DAYS
 
 
 def get_time_stop_symbols() -> list[str]:

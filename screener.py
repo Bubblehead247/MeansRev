@@ -246,7 +246,7 @@ def run_screen(top_n: int) -> list[dict]:
 
 def _write_csv(rows: list[dict]) -> None:
     headers = ["symbol", "score", "adx", "range_pct", "dollar_volume", "close", "sector", "type"]
-    with open(config.SCREEN_RESULTS_CSV, "w", newline="") as f:
+    with open(config.SCREEN_RESULTS_CSV, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=headers)
         writer.writeheader()
         writer.writerows(rows)

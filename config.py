@@ -170,6 +170,12 @@ SCREEN_RESULTS_CSV       = "screener_results.csv"
 # default that would be published in this file all over again.
 NTFY_TOPIC = os.getenv("NTFY_TOPIC", "").strip()
 
+# ── Discord daily report ──────────────────────────────────────────────────────
+# Routine reports go here; urgent alerts stay on ntfy. A webhook URL is a
+# credential (anyone holding it can post to the channel), so like the ntfy topic
+# it lives in alpaca.env. Unset -> the report falls back to ntfy.
+DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "").strip()
+
 # ── Exit Rules ────────────────────────────────────────────────────────────────
 MAX_HOLD_DAYS = 10           # Time stop: exit once held this many calendar days (was 7 until 2026-09-27;
                              # 8-14 days all beat 7 in both halves of 2011-2026 and on Alpaca 2020-2026,

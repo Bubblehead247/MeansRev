@@ -79,7 +79,7 @@ def log_closed_trade(pos_data: dict, exit_price: float, exit_reason: str,
     }
 
     write_header = not CSV_FILE.exists()
-    with open(CSV_FILE, "a", newline="") as f:
+    with open(CSV_FILE, "a", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=HEADERS)
         if write_header:
             writer.writeheader()

@@ -1,0 +1,827 @@
+{
+ "A_trade_stats": [
+  {
+   "label": "all signal-era trades (>=2026-06-09)",
+   "n": 25,
+   "win_rate": 0.52,
+   "avg_win_pct": 1.89,
+   "avg_loss_pct": -1.81,
+   "payoff": 1.04,
+   "profit_factor": 1.03,
+   "expectancy_pct": 0.11,
+   "sd_pct": 2.58,
+   "t_stat_vs_zero": 0.22,
+   "total_pnl": 156.0,
+   "avg_days_held": 7.5,
+   "worst_pct": -3.4,
+   "worst_5pct_mean": -3.4,
+   "exits": {
+    "time_stop_fallback": 10,
+    "rsi_exit_fallback": 10,
+    "hard_stop": 2,
+    "closed_externally": 1,
+    "time_stop": 1,
+    "rsi_exit": 1
+   }
+  },
+  {
+   "label": "old config (entered before 9/28)",
+   "n": 18,
+   "win_rate": 0.5,
+   "avg_win_pct": 1.54,
+   "avg_loss_pct": -1.67,
+   "payoff": 0.92,
+   "profit_factor": 0.87,
+   "expectancy_pct": -0.06,
+   "sd_pct": 1.93,
+   "t_stat_vs_zero": -0.14,
+   "total_pnl": -478.0,
+   "avg_days_held": 7.6,
+   "worst_pct": -3.29,
+   "worst_5pct_mean": -3.29,
+   "exits": {
+    "time_stop_fallback": 10,
+    "rsi_exit_fallback": 4,
+    "hard_stop": 2,
+    "closed_externally": 1,
+    "time_stop": 1
+   }
+  },
+  {
+   "label": "new config (entered 9/28 on) - closed only",
+   "n": 7,
+   "win_rate": 0.571,
+   "avg_win_pct": 2.66,
+   "avg_loss_pct": -2.23,
+   "payoff": 1.19,
+   "profit_factor": 1.61,
+   "expectancy_pct": 0.56,
+   "sd_pct": 3.96,
+   "t_stat_vs_zero": 0.38,
+   "total_pnl": 634.0,
+   "avg_days_held": 7.3,
+   "worst_pct": -3.4,
+   "worst_5pct_mean": -3.4,
+   "exits": {
+    "rsi_exit_fallback": 6,
+    "rsi_exit": 1
+   }
+  }
+ ],
+ "A_new_config_trades": [
+  {
+   "symbol": "IWM",
+   "entry_date": "2026-09-30",
+   "exit_date": "2026-10-07",
+   "days_held": "7",
+   "realized_pnl": "-73.15",
+   "realized_pnl_pct": "-0.467",
+   "exit_reason": "rsi_exit_fallback"
+  },
+  {
+   "symbol": "DIA",
+   "entry_date": "2026-10-01",
+   "exit_date": "2026-10-08",
+   "days_held": "7",
+   "realized_pnl": "30.42",
+   "realized_pnl_pct": "0.199",
+   "exit_reason": "rsi_exit_fallback"
+  },
+  {
+   "symbol": "XLV",
+   "entry_date": "2026-10-02",
+   "exit_date": "2026-10-09",
+   "days_held": "7",
+   "realized_pnl": "256.34",
+   "realized_pnl_pct": "1.64",
+   "exit_reason": "rsi_exit_fallback"
+  },
+  {
+   "symbol": "XOP",
+   "entry_date": "2026-09-30",
+   "exit_date": "2026-10-12",
+   "days_held": "12",
+   "realized_pnl": "1358.65",
+   "realized_pnl_pct": "8.601",
+   "exit_reason": "rsi_exit_fallback"
+  },
+  {
+   "symbol": "XBI",
+   "entry_date": "2026-10-09",
+   "exit_date": "2026-10-13",
+   "days_held": "4",
+   "realized_pnl": "27.44",
+   "realized_pnl_pct": "0.187",
+   "exit_reason": "rsi_exit_fallback"
+  },
+  {
+   "symbol": "QQQ",
+   "entry_date": "2026-10-16",
+   "exit_date": "2026-10-23",
+   "days_held": "7",
+   "realized_pnl": "-429.21",
+   "realized_pnl_pct": "-2.82",
+   "exit_reason": "rsi_exit_fallback"
+  },
+  {
+   "symbol": "XLK",
+   "entry_date": "2026-10-16",
+   "exit_date": "2026-10-23",
+   "days_held": "7",
+   "realized_pnl": "-536.66",
+   "realized_pnl_pct": "-3.395",
+   "exit_reason": "rsi_exit"
+  }
+ ],
+ "A_open_positions": [
+  {
+   "symbol": "EEM",
+   "shares": 248,
+   "entry": 63.519758,
+   "last": 62.01,
+   "unrealized": -374.0,
+   "unrealized_pct": -2.38,
+   "entry_date": "2026-10-16"
+  },
+  {
+   "symbol": "DBMF",
+   "shares": 484,
+   "entry": 32.83,
+   "last": 32.73,
+   "unrealized": -48.0,
+   "unrealized_pct": -0.3,
+   "entry_date": "2026-10-16"
+  }
+ ],
+ "B_exposure": {
+  "avg_stock_exposure_since_0529": 0.284,
+  "avg_stock_exposure_since_0928": 0.379,
+  "avg_stock_exposure_old_0529_0925": 0.262,
+  "avg_sgov_share_since_0929": 0.502,
+  "days_with_zero_stock_exposure_since_0529": 39
+ },
+ "B_windows": [
+  {
+   "label": "since inception (4/9)",
+   "from": "2026-04-09",
+   "to": "2026-10-23",
+   "trading_days": 137,
+   "total_return_pct": 4.74,
+   "T-bill floor (SGOV total return) pct": 2.02,
+   "SPY total return pct": 12.34,
+   "SPY at the bot's own daily exposure + SGOV for the rest pct": 7.77,
+   "ann_vol_pct": 7.24,
+   "sharpe_vs_sgov": 0.71,
+   "max_dd_pct": -3.23,
+   "current_dd_pct": -3.04,
+   "beta_spy": 0.221,
+   "corr_spy": 0.367,
+   "worst_day_pct": -1.54,
+   "best_day_pct": 2.91,
+   "zero_return_days": 38
+  },
+  {
+   "label": "since 5/29 (first full month of signal-era trading)",
+   "from": "2026-05-29",
+   "to": "2026-10-23",
+   "trading_days": 102,
+   "total_return_pct": -0.9,
+   "T-bill floor (SGOV total return) pct": 1.5,
+   "SPY total return pct": 0.97,
+   "SPY at the bot's own daily exposure + SGOV for the rest pct": 4.47,
+   "ann_vol_pct": 5.48,
+   "sharpe_vs_sgov": -1.05,
+   "max_dd_pct": -3.23,
+   "current_dd_pct": -3.04,
+   "beta_spy": 0.19,
+   "corr_spy": 0.433,
+   "worst_day_pct": -1.54,
+   "best_day_pct": 1.07,
+   "zero_return_days": 26
+  },
+  {
+   "label": "old config 5/29-9/25",
+   "from": "2026-05-29",
+   "to": "2026-09-25",
+   "trading_days": 82,
+   "total_return_pct": -0.45,
+   "T-bill floor (SGOV total return) pct": 1.2,
+   "SPY total return pct": 2.48,
+   "SPY at the bot's own daily exposure + SGOV for the rest pct": 3.74,
+   "ann_vol_pct": 4.85,
+   "sharpe_vs_sgov": -1.02,
+   "max_dd_pct": -2.72,
+   "current_dd_pct": -2.6,
+   "beta_spy": 0.143,
+   "corr_spy": 0.386,
+   "worst_day_pct": -0.99,
+   "best_day_pct": 1.07,
+   "zero_return_days": 26
+  },
+  {
+   "label": "new config 9/25 close - 10/23",
+   "from": "2026-09-25",
+   "to": "2026-10-23",
+   "trading_days": 20,
+   "total_return_pct": -0.45,
+   "T-bill floor (SGOV total return) pct": 0.3,
+   "SPY total return pct": -1.48,
+   "SPY at the bot's own daily exposure + SGOV for the rest pct": 0.7,
+   "ann_vol_pct": 7.69,
+   "sharpe_vs_sgov": -1.19,
+   "max_dd_pct": -1.54,
+   "current_dd_pct": -1.38,
+   "beta_spy": 0.553,
+   "corr_spy": 0.701,
+   "worst_day_pct": -1.54,
+   "best_day_pct": 0.6,
+   "zero_return_days": 0
+  }
+ ],
+ "B_peak": {
+  "peak_equity": 108029.73,
+  "peak_date": "2026-09-03",
+  "last_equity": 104743.99,
+  "calendar_days_under_water": 50
+ },
+ "B_forgone_tbill_yield_pre_sweep": {
+  "avg_idle_share": 0.739,
+  "sgov_return_6/1-9/28_pct": 1.21,
+  "approx_forgone_usd": 939.0
+ },
+ "C_signal_fidelity": [
+  {
+   "date": "2026-09-25",
+   "scan_logged": true,
+   "recomputed": [],
+   "bot_log": [],
+   "match": true
+  },
+  {
+   "date": "2026-09-28",
+   "scan_logged": false,
+   "recomputed": [],
+   "bot_log": [],
+   "match": null
+  },
+  {
+   "date": "2026-09-29",
+   "scan_logged": true,
+   "recomputed": [
+    "IWM",
+    "XOP"
+   ],
+   "bot_log": [
+    "IWM",
+    "XOP"
+   ],
+   "match": true
+  },
+  {
+   "date": "2026-09-30",
+   "scan_logged": true,
+   "recomputed": [
+    "DIA",
+    "IWM",
+    "RSP",
+    "XLF"
+   ],
+   "bot_log": [
+    "DIA",
+    "IWM",
+    "RSP",
+    "XLF"
+   ],
+   "match": true
+  },
+  {
+   "date": "2026-10-01",
+   "scan_logged": true,
+   "recomputed": [
+    "EFA",
+    "XLV"
+   ],
+   "bot_log": [
+    "EFA",
+    "XLV"
+   ],
+   "match": true
+  },
+  {
+   "date": "2026-10-02",
+   "scan_logged": true,
+   "recomputed": [
+    "XLV"
+   ],
+   "bot_log": [
+    "XLV"
+   ],
+   "match": true
+  },
+  {
+   "date": "2026-10-05",
+   "scan_logged": true,
+   "recomputed": [],
+   "bot_log": [],
+   "match": true
+  },
+  {
+   "date": "2026-10-06",
+   "scan_logged": true,
+   "recomputed": [],
+   "bot_log": [],
+   "match": true
+  },
+  {
+   "date": "2026-10-07",
+   "scan_logged": true,
+   "recomputed": [],
+   "bot_log": [],
+   "match": true
+  },
+  {
+   "date": "2026-10-08",
+   "scan_logged": true,
+   "recomputed": [
+    "EEM",
+    "XBI"
+   ],
+   "bot_log": [
+    "EEM",
+    "XBI"
+   ],
+   "match": true
+  },
+  {
+   "date": "2026-10-09",
+   "scan_logged": true,
+   "recomputed": [],
+   "bot_log": [],
+   "match": true
+  },
+  {
+   "date": "2026-10-12",
+   "scan_logged": true,
+   "recomputed": [],
+   "bot_log": [],
+   "match": true
+  },
+  {
+   "date": "2026-10-13",
+   "scan_logged": true,
+   "recomputed": [],
+   "bot_log": [],
+   "match": true
+  },
+  {
+   "date": "2026-10-14",
+   "scan_logged": false,
+   "recomputed": [
+    "EEM",
+    "QQQ",
+    "SPY",
+    "XLK"
+   ],
+   "bot_log": [],
+   "match": null
+  },
+  {
+   "date": "2026-10-15",
+   "scan_logged": true,
+   "recomputed": [
+    "DBMF",
+    "EEM",
+    "QQQ",
+    "XLK"
+   ],
+   "bot_log": [
+    "DBMF",
+    "EEM",
+    "QQQ",
+    "XLK"
+   ],
+   "match": true
+  },
+  {
+   "date": "2026-10-16",
+   "scan_logged": true,
+   "recomputed": [
+    "DBMF",
+    "QQQ",
+    "XLK"
+   ],
+   "bot_log": [
+    "DBMF",
+    "QQQ",
+    "XLK"
+   ],
+   "match": true
+  },
+  {
+   "date": "2026-10-19",
+   "scan_logged": true,
+   "recomputed": [],
+   "bot_log": [],
+   "match": true
+  },
+  {
+   "date": "2026-10-20",
+   "scan_logged": true,
+   "recomputed": [],
+   "bot_log": [],
+   "match": true
+  },
+  {
+   "date": "2026-10-21",
+   "scan_logged": true,
+   "recomputed": [],
+   "bot_log": [],
+   "match": true
+  },
+  {
+   "date": "2026-10-22",
+   "scan_logged": true,
+   "recomputed": [],
+   "bot_log": [],
+   "match": true
+  },
+  {
+   "date": "2026-10-23",
+   "scan_logged": true,
+   "recomputed": [],
+   "bot_log": [],
+   "match": true
+  }
+ ],
+ "D_replay_with_lost_scans": {
+  "closed": [
+   {
+    "symbol": "XLF",
+    "entry_date": "2026-09-25",
+    "exit_date": "2026-10-01",
+    "entry": 54.71,
+    "exit": 52.91,
+    "shares": 385,
+    "pnl": -693.0,
+    "reason": "hard_stop"
+   },
+   {
+    "symbol": "IWM",
+    "entry_date": "2026-09-30",
+    "exit_date": "2026-10-07",
+    "entry": 280.17,
+    "exit": 278.25,
+    "shares": 56,
+    "pnl": -107.52,
+    "reason": "rsi_exit"
+   },
+   {
+    "symbol": "DIA",
+    "entry_date": "2026-10-01",
+    "exit_date": "2026-10-08",
+    "entry": 509.37,
+    "exit": 509.01,
+    "shares": 30,
+    "pnl": -10.8,
+    "reason": "rsi_exit"
+   },
+   {
+    "symbol": "XLV",
+    "entry_date": "2026-10-02",
+    "exit_date": "2026-10-09",
+    "entry": 166.545,
+    "exit": 167.73,
+    "shares": 94,
+    "pnl": 111.39,
+    "reason": "rsi_exit"
+   },
+   {
+    "symbol": "XOP",
+    "entry_date": "2026-09-30",
+    "exit_date": "2026-10-12",
+    "entry": 179.52315,
+    "exit": 194.1,
+    "shares": 88,
+    "pnl": 1282.76,
+    "reason": "rsi_exit"
+   },
+   {
+    "symbol": "XBI",
+    "entry_date": "2026-10-09",
+    "exit_date": "2026-10-13",
+    "entry": 149.32,
+    "exit": 150.52,
+    "shares": 98,
+    "pnl": 117.6,
+    "reason": "rsi_exit"
+   },
+   {
+    "symbol": "QQQ",
+    "entry_date": "2026-10-16",
+    "exit_date": "2026-10-23",
+    "entry": 725.52,
+    "exit": 702.199,
+    "shares": 21,
+    "pnl": -489.74,
+    "reason": "rsi_exit"
+   },
+   {
+    "symbol": "XLK",
+    "entry_date": "2026-10-16",
+    "exit_date": "2026-10-23",
+    "entry": 188.28,
+    "exit": 181.82,
+    "shares": 84,
+    "pnl": -542.64,
+    "reason": "rsi_exit"
+   }
+  ],
+  "open": {
+   "EEM": {
+    "entry_date": "2026-10-16",
+    "entry": 63.64,
+    "shares": 248,
+    "stop": 60.90129305932706
+   },
+   "DBMF": {
+    "entry_date": "2026-10-16",
+    "entry": 32.83,
+    "shares": 484,
+    "stop": 31.87921213686241
+   }
+  },
+  "realized": -332.0,
+  "open_mtm": -453.0
+ },
+ "D_replay_all_scans": {
+  "closed": [
+   {
+    "symbol": "XLF",
+    "entry_date": "2026-09-25",
+    "exit_date": "2026-10-01",
+    "entry": 54.71,
+    "exit": 52.91,
+    "shares": 385,
+    "pnl": -693.0,
+    "reason": "hard_stop"
+   },
+   {
+    "symbol": "IWM",
+    "entry_date": "2026-09-30",
+    "exit_date": "2026-10-07",
+    "entry": 280.17,
+    "exit": 278.25,
+    "shares": 56,
+    "pnl": -107.52,
+    "reason": "rsi_exit"
+   },
+   {
+    "symbol": "DIA",
+    "entry_date": "2026-10-01",
+    "exit_date": "2026-10-08",
+    "entry": 509.37,
+    "exit": 509.01,
+    "shares": 30,
+    "pnl": -10.8,
+    "reason": "rsi_exit"
+   },
+   {
+    "symbol": "XLV",
+    "entry_date": "2026-10-02",
+    "exit_date": "2026-10-09",
+    "entry": 166.545,
+    "exit": 167.73,
+    "shares": 94,
+    "pnl": 111.39,
+    "reason": "rsi_exit"
+   },
+   {
+    "symbol": "XOP",
+    "entry_date": "2026-09-30",
+    "exit_date": "2026-10-12",
+    "entry": 179.52315,
+    "exit": 194.1,
+    "shares": 88,
+    "pnl": 1282.76,
+    "reason": "rsi_exit"
+   },
+   {
+    "symbol": "XBI",
+    "entry_date": "2026-10-09",
+    "exit_date": "2026-10-13",
+    "entry": 149.32,
+    "exit": 150.52,
+    "shares": 98,
+    "pnl": 117.6,
+    "reason": "rsi_exit"
+   },
+   {
+    "symbol": "SPY",
+    "entry_date": "2026-10-15",
+    "exit_date": "2026-10-23",
+    "entry": 766.25,
+    "exit": 759.896,
+    "shares": 20,
+    "pnl": -127.08,
+    "reason": "rsi_exit"
+   },
+   {
+    "symbol": "QQQ",
+    "entry_date": "2026-10-15",
+    "exit_date": "2026-10-23",
+    "entry": 718.55,
+    "exit": 702.199,
+    "shares": 21,
+    "pnl": -343.37,
+    "reason": "rsi_exit"
+   },
+   {
+    "symbol": "XLK",
+    "entry_date": "2026-10-15",
+    "exit_date": "2026-10-23",
+    "entry": 186.38,
+    "exit": 181.82,
+    "shares": 83,
+    "pnl": -378.48,
+    "reason": "rsi_exit"
+   }
+  ],
+  "open": {
+   "DBMF": {
+    "entry_date": "2026-10-16",
+    "entry": 32.83,
+    "shares": 484,
+    "stop": 31.87921213686241
+   }
+  },
+  "realized": -149.0,
+  "open_mtm": -48.0
+ },
+ "D_outage_cost_usd": {
+  "realized_diff": 183.0,
+  "mtm_diff": 405.0,
+  "total_diff": 588.0,
+  "note": "difference in 9/28-10/23 P&L (realized + open MTM at 10/23 close) between a replay that runs every scan and one that skips 9/28 and 10/14"
+ },
+ "D_sector_cap_effect": {
+  "note": "same lost-scan replay with the 2-per-sector cap removed (signals it blocked: RSP 9/30, EFA 10/1 per bot.log)",
+  "with_cap": {
+   "realized": -332.0,
+   "open_mtm": -453.0
+  },
+  "no_cap": {
+   "realized": -328.0,
+   "open_mtm": -453.0,
+   "trades": [
+    [
+     "RSP",
+     "2026-10-01",
+     "2026-10-08",
+     132.75
+    ],
+    [
+     "EFA",
+     "2026-10-02",
+     "2026-10-08",
+     -128.3
+    ]
+   ],
+   "open": [
+    "EEM",
+    "DBMF"
+   ]
+  }
+ },
+ "D_signals_on_lost_days": {
+  "2026-09-28": [],
+  "2026-10-14": [
+   [
+    "SPY",
+    7.46
+   ],
+   [
+    "QQQ",
+    3.27
+   ],
+   [
+    "EEM",
+    5.14
+   ],
+   [
+    "XLK",
+    2.37
+   ]
+  ]
+ },
+ "D_actual_pnl_since_0928": {
+  "realized": -59.0,
+  "open_mtm": -422.0
+ },
+ "E_execution": {
+  "buys_n": 27,
+  "sells_n": 22,
+  "buys_vs_open_bps_mean": 0.6,
+  "buys_vs_prev_close_bps_mean": 13.5,
+  "sells_vs_open_bps_mean": -11.9,
+  "sells_vs_open_bps_median": -11.4,
+  "sells_vs_prev_close_bps_mean": 14.8,
+  "sells_vs_open_bps_sd": 26.6,
+  "buys_vs_open_bps_sd": 25.4,
+  "by_era": [
+   {
+    "era": "new",
+    "side": "buy",
+    "count": 9,
+    "mean": -5.5,
+    "median": -10.8
+   },
+   {
+    "era": "new",
+    "side": "sell",
+    "count": 7,
+    "mean": -21.4,
+    "median": -22.7
+   },
+   {
+    "era": "old",
+    "side": "buy",
+    "count": 18,
+    "mean": 3.6,
+    "median": 7.6
+   },
+   {
+    "era": "old",
+    "side": "sell",
+    "count": 15,
+    "mean": -7.4,
+    "median": -9.7
+   }
+  ],
+  "note": "positive = worse for us (paid more / received less). Exits are the 9:45 ET market fallback after the opening-auction limit sell fails to fill on paper."
+ },
+ "F_sgov_ex_dates": {
+  "2026-06-01": 0.3005,
+  "2026-07-01": 0.2902,
+  "2026-08-03": 0.3001,
+  "2026-09-01": 0.3102,
+  "2026-10-01": 0.3001
+ },
+ "F_method_check_DIA": {
+  "2026-08-21": 0.4372,
+  "2026-09-18": 1.1968,
+  "2026-10-16": 0.1096
+ },
+ "F_sweep": {
+  "holding_qty": 709.4348,
+  "avg_cost": 100.5992,
+  "last": 100.66,
+  "realized_trading_pnl": -27.2,
+  "unrealized_pnl": 43.11
+ },
+ "F_sgov_expected_dividends": [
+  {
+   "ex_date": "2026-10-01",
+   "per_share": 0.3001,
+   "shares_held": 349.72,
+   "expected_usd": 104.95
+  }
+ ],
+ "G_reconciliation_0925_1023": {
+  "components": {
+   "XLF 9/25 close mark -> 10/1 stop (385 sh)": -743.05,
+   "closed trades entered 9/28 on (trades.csv)": 633.83,
+   "open EEM + DBMF mark at 10/23 close": -422.0,
+   "SGOV realized + unrealized (broker avg cost)": 15.91,
+   "DIA dividend credited 10/13": 48.89,
+   "fees (REG/TAF/CAT)": -4.75
+  },
+  "ledger_total": -471.17,
+  "broker_equity_change": -471.99,
+  "unexplained": -0.82,
+  "note": "the DIA 9/25 sale (-$135.67) happened before the 9/25 close so is excluded"
+ },
+ "H_picks_vs_spy_same_windows": {
+  "note": "dollars the same notional would have made in SPY over each trade's own entry->exit window (open to open; open positions marked at 10/23 close)",
+  "all": {
+   "n": 26,
+   "bot_pnl": 239.0,
+   "spy_same_window_pnl": 1488.0,
+   "excess": -1249.0
+  },
+  "by_era": [
+   {
+    "era": "new",
+    "n": 9,
+    "bot_pnl": 212.0,
+    "spy": -288.0
+   },
+   {
+    "era": "old",
+    "n": 17,
+    "bot_pnl": 27.0,
+    "spy": 1776.0
+   }
+  ],
+  "trades_where_pick_beat_spy": 11
+ }
+}

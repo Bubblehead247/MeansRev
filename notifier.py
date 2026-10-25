@@ -59,10 +59,20 @@ def send_checkpoint(new_trades: int, target: int):
     _push(
         "checkpoint",
         "\U0001f4ca EVAL CHECKPOINT",
-        f"{new_trades} closed trades since v1.4 go-live (target {target}). "
+        f"{new_trades} closed trades since the checkpoint baseline (target {target}). "
         f"Review execution fidelity: fills/slippage, stops, signal match, "
-        f"win~68%/hold~3-4d, drawdown <25%. Run: python eval_checkpoint.py",
+        f"caps, exit mix, drawdown. Run: python eval_checkpoint.py",
         4, ["bar_chart"],
+    )
+
+
+def send_catch_up(session: str, ok: bool, detail: str):
+    """Push when the morning execute had to run (or failed to run) a missed scan."""
+    _push(
+        "catch-up scan",
+        "\U0001f501 CATCH-UP SCAN" if ok else "❌ CATCH-UP SCAN FAILED",
+        f"The scan for the {session} session did not run last evening. {detail}",
+        4, ["repeat" if ok else "x"],
     )
 
 
@@ -137,55 +147,48 @@ def send_error(detail: str):
     )
 
 
-def send_daily_status(snapshot: dict, positions: dict, sweep: dict | None = None):
-    """Push the daily account summary: equity, P&L, every open position, and
-    what the T-bill cash sweep has earned (``cash_sweep.report()``) when active.
+def send_daily_status(snapshot: dict, positions: dict, sweep: dict | None = None,
+                      queued: int | None = None):
+    """Send the daily account summary as the shared :mod:`quantcore.report` layout.
 
-    Routine, not urgent — priority 3, same tier as :func:`send_warning` and
-    :func:`send_checkpoint`. ``[PAPER]`` is prefixed to the title whenever
-    ``config.PAPER`` is True, so a paper push can never be mistaken for a live
-    account's numbers.
+    Routine, so it goes to Discord (``config.DISCORD_WEBHOOK_URL``) rather than
+    the phone-priority ntfy channel; ntfy is only the fallback when no webhook is
+    set or Discord is down, so the report is never silently dropped. Urgent
+    alerts elsewhere in this file stay on ntfy.
+
+    ``queued`` is how many actions the scan has lined up for the next open.
     """
-    equity      = snapshot["equity"]
-    last_equity = snapshot["last_equity"]
-    base_value  = snapshot["base_value"]
-    asof        = snapshot["base_value_asof"]
-
-    daily_pl     = equity - last_equity
-    daily_pl_pct = (daily_pl / last_equity * 100) if last_equity else 0.0
-    total_pl     = equity - base_value
-    total_pl_pct = (total_pl / base_value * 100) if base_value else 0.0
+    from datetime import date
+    from quantcore.report import DailyReport, PositionLine, deliver
 
     lines = [
-        f"Equity: ${equity:,.2f}",
-        f"Today: {daily_pl:+,.2f} ({daily_pl_pct:+.2f}%)",
-        f"Total: {total_pl:+,.2f} ({total_pl_pct:+.2f}%) since {asof}",
-        "",
-        "Open positions:",
+        PositionLine.priced(
+            symbol, float(pos.qty), float(pos.avg_entry_price),
+            float(pos.current_price), float(pos.unrealized_pl),
+            float(pos.unrealized_plpc),
+        )
+        for symbol, pos in positions.items()
     ]
-    if not positions:
-        lines.append("(none)")
-    else:
-        for symbol, pos in positions.items():
-            lines.append(
-                f"{symbol} | {pos.qty} sh @ ${float(pos.avg_entry_price):.2f} | "
-                f"now ${float(pos.current_price):.2f} | "
-                f"{float(pos.unrealized_pl):+,.2f} "
-                f"({float(pos.unrealized_plpc) * 100:+.2f}%)"
-            )
+    extras = []
     if sweep and sweep.get("trades"):
-        lines += [
-            "",
-            f"Cash sweep ({config.CASH_SWEEP_SYMBOL}): ${sweep['holding_value']:,.2f} held | "
-            f"earned {sweep['total']:+,.2f} since {sweep['since']} "
-            f"(price {sweep['realized'] + sweep['unrealized']:+,.2f}, "
-            f"dividends {sweep['dividends']:+,.2f}"
-            f"{' est. — paper pays none' if sweep.get('dividends_estimated') else ''})"
-            + ("" if sweep["ledger_matches_broker"] else " | LEDGER MISMATCH"),
-        ]
+        extras.append(
+            f"Cash sweep ({config.CASH_SWEEP_SYMBOL}): ${sweep['holding_value']:,.2f} held, "
+            f"earned {sweep['total']:+,.2f} since {sweep['since']}"
+            f"{' (dividends est.; paper pays none)' if sweep.get('dividends_estimated') else ''}"
+        )
+    health = None
+    if sweep and sweep.get("trades"):
+        ok = sweep["ledger_matches_broker"]
+        health = (ok, "cash-sweep ledger matches broker" if ok else "CASH-SWEEP LEDGER MISMATCH")
 
-    title = f"{'[PAPER] ' if config.PAPER else ''}\U0001f4ca DAILY STATUS"
-    _push("daily status", title, "\n".join(lines), 3, ["bar_chart"])
+    report = DailyReport(
+        bot="MeansRev", day=date.today(), paper=config.PAPER,
+        equity=snapshot["equity"], last_equity=snapshot["last_equity"],
+        base_value=snapshot["base_value"], base_asof=str(snapshot["base_value_asof"])[:10],
+        cash=snapshot.get("cash"), positions=lines, queued=queued,
+        extras=extras, health=health,
+    )
+    deliver(report, webhook=config.DISCORD_WEBHOOK_URL, ntfy_topic=config.NTFY_TOPIC)
 
 
 def send_signal(symbol: str, rsi_value: float):

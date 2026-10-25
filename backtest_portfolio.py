@@ -307,7 +307,7 @@ def _save(rows, filename):
     if not rows:
         return
     dicts = [r if isinstance(r, dict) else asdict(r) for r in rows]
-    with open(filename, "w", newline="") as f:
+    with open(filename, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=dicts[0].keys())
         w.writeheader(); w.writerows(dicts)
     logger.info(f"Saved → {filename} ({len(rows):,} rows)")

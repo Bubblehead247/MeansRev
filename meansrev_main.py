@@ -21,6 +21,9 @@ from pathlib import Path
 
 import schedule
 
+from zoneinfo import ZoneInfo
+
+from quantcore import market_calendar
 from quantcore.jobs import JobSpec, run_job
 from quantcore.single_instance import SingleInstance
 from quantcore.statefile import write_json_atomic
@@ -35,6 +38,8 @@ import position_tracker as pt
 import scanner
 import sectors
 import trade_log
+
+_ET = ZoneInfo("America/New_York")
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 # Deliberately NOT called at import time. meansrev_main is imported by the test
@@ -107,7 +112,7 @@ def _save_pending(fresh: bool = False):
     queued_at = None
     if not fresh and PENDING_FILE.exists():
         try:
-            queued_at = json.loads(PENDING_FILE.read_text()).get("queued_at")
+            queued_at = json.loads(PENDING_FILE.read_text(encoding="utf-8")).get("queued_at")
         except (OSError, ValueError):
             queued_at = None
 
@@ -133,7 +138,7 @@ def _load_pending():
     if not PENDING_FILE.exists():
         return
     try:
-        payload   = json.loads(PENDING_FILE.read_text())
+        payload   = json.loads(PENDING_FILE.read_text(encoding="utf-8"))
         queued_at = datetime.fromisoformat(payload["queued_at"])
         age_days  = (datetime.now(timezone.utc) - queued_at).days
         if age_days > PENDING_MAX_AGE_DAYS:
@@ -268,7 +273,7 @@ def _skip_if_closed(job_name: str) -> bool:
 
 # ── Scheduled Jobs ────────────────────────────────────────────────────────────
 
-def post_close_scan():
+def post_close_scan(as_of: date | None = None):
     """
     16:30 ET — Scan all symbols and build the pending action queue.
 
@@ -277,6 +282,12 @@ def post_close_scan():
       2. Time stop    — position age >= MAX_HOLD_DAYS
       3. Weekly break — close below weekly SMA(200)
       4. RSI exit     — RSI(2) crosses back below 70
+
+    ``as_of`` is set only by the catch-up (:func:`catch_up_scan_if_missed`): the
+    session whose close is being scanned, run the next morning before the open.
+    Signals and the time-stop age are then taken as of that session, so the queue
+    is the one the missed evening scan would have produced. The evening cash sweep
+    is skipped; the 09:25 execute funds the entries itself.
     """
     if _skip_if_closed("POST-CLOSE SCAN"):
         return
@@ -284,9 +295,11 @@ def post_close_scan():
     global _pending
     _pending.clear()
 
-    logger.info("▶  POST-CLOSE SCAN STARTED")
+    logger.info("▶  POST-CLOSE SCAN STARTED"
+                + (f" (catch-up for the {as_of} session)" if as_of else ""))
 
-    scan_results     = scanner.run_scan()
+    scan_results     = (scanner.run_scan(expected_date=as_of.isoformat()) if as_of
+                        else scanner.run_scan())
     open_positions   = executor.get_alpaca_positions()
 
     # Detect hard stop exits: positions tracked as "open" that vanished from
@@ -331,7 +344,7 @@ def post_close_scan():
         in_position = symbol in open_positions
 
         # ── Time Stop (highest soft-exit priority) ──
-        if in_position and pt.time_stop_triggered(symbol):
+        if in_position and pt.time_stop_triggered(symbol, as_of):
             _pending.append({"symbol": symbol, "action": "EXIT", "reason": "time_stop", "close": result["close"]})
             logger.info(f"  ⏰ Queued EXIT (time_stop): {symbol}")
             continue
@@ -394,11 +407,16 @@ def post_close_scan():
     _check_for_mass_exit(open_positions)
 
     _save_pending(fresh=True)
-    _append_queue_event("queued", actions=[[p["symbol"], p["action"]] for p in _pending])
+    _append_queue_event("queued", actions=[[p["symbol"], p["action"]] for p in _pending],
+                        session=(as_of or datetime.now(_ET).date()).isoformat(),
+                        catch_up=bool(as_of))
     logger.info(
         f"▶  SCAN COMPLETE | Pending queue: "
         f"{[(p['symbol'], p['action']) for p in _pending]}"
     )
+
+    if as_of:
+        return
 
     # Park spare cash in the T-bill ETF / raise tomorrow's entry cash, now that
     # tomorrow's entries are known. After the queue is saved: a sweep problem
@@ -407,6 +425,77 @@ def post_close_scan():
         cash_sweep.evening_rebalance(list(_pending))
     except Exception as exc:  # noqa: BLE001
         logger.error(f"Cash sweep (evening) failed: {exc}", exc_info=True)
+
+
+def _last_scanned_session() -> date | None:
+    """The session the most recent queued scan was for, from the receipt log.
+
+    Older receipts carry no ``session``; they were all written by the 15:30 CT
+    scan, so the New York date of their timestamp is the session.
+    """
+    last = None
+    for event in _read_queue_events():
+        if event.get("event") != "queued":
+            continue
+        try:
+            if event.get("session"):
+                last = date.fromisoformat(event["session"])
+            else:
+                last = datetime.fromisoformat(event["ts"]).astimezone(_ET).date()
+        except (KeyError, ValueError):
+            continue
+    return last
+
+
+def catch_up_scan_if_missed(today: date | None = None, sessions=None) -> bool:
+    """Run the missed evening scan from the morning execute. True if it ran.
+
+    The 15:30 CT scan has been lost twice (2026-09-28, 10-14) to a network
+    outage that outlasted the job's retries; the entries it would have queued
+    went out a day late, or not at all. If the last scan on record is for an
+    earlier session than the one before today, scan that session's close now,
+    ahead of the execute, so the queue is the one the evening scan would have
+    produced. Daily bars carry the previous close until the open, so this reads
+    the same data as the evening run.
+
+    Never raises: a failed catch-up restores the queue it found and the execute
+    carries on with it, which is what happened before this existed.
+    """
+    today = today or datetime.now(_ET).date()
+    sessions = market_calendar.load_cache() if sessions is None else sessions
+    prior = max((s.day for s in sessions if s.day < today), default=None)
+    if prior is None or not market_calendar.covers(prior, sessions):
+        logger.warning("Catch-up scan: market calendar does not cover the prior "
+                       "session; cannot tell whether the scan was missed.")
+        return False
+    scanned = _last_scanned_session()
+    if scanned is not None and scanned >= prior:
+        return False
+
+    logger.warning(f"Catch-up scan: the last scan on record is for {scanned}, not the "
+                   f"{prior} session. Scanning the {prior} close now, before the open.")
+    snapshot = list(_pending)
+    try:
+        post_close_scan(as_of=prior)
+    except Exception as exc:  # noqa: BLE001 - fall back to the queue we had
+        logger.error(f"Catch-up scan failed: {exc}", exc_info=True)
+        _pending[:] = snapshot
+        notifier.send_catch_up(str(prior), False,
+                               f"The catch-up failed ({type(exc).__name__}: {exc}); "
+                               f"sending the queue already on file.")
+        return False
+    try:
+        notifier.send_catch_up(str(prior), True,
+                               f"Scanned its close before the open; queued {len(_pending)} action(s).")
+    except Exception as exc:  # noqa: BLE001
+        logger.error(f"Could not send catch-up notice: {exc}")
+    return True
+
+
+def _execute_job():
+    """The 09:25 ET job: catch up a missed scan, then send the queue."""
+    catch_up_scan_if_missed()
+    pre_open_execute()
 
 
 def _check_for_mass_exit(open_positions) -> None:
@@ -546,7 +635,7 @@ def status_report():
         return
 
     # Paper-trading evaluation checkpoint: one-time push when 25 closed trades
-    # accumulate since the v1.4 go-live (see eval_checkpoint.py). Never raises.
+    # accumulate since the checkpoint baseline (see eval_checkpoint.py). Never raises.
     cp = eval_checkpoint.check_and_notify()
     logger.info(f"STATUS | Eval checkpoint: {cp['new']}/{cp['target']} trades"
                 + ("  ✅ REACHED — review fidelity" if cp["reached"] else ""))
@@ -578,7 +667,7 @@ def status_report():
                 logger.info(f"STATUS | Cash sweep: {sweep}")
             except Exception as exc:  # noqa: BLE001
                 logger.error(f"Cash sweep report failed: {exc}", exc_info=True)
-        notifier.send_daily_status(snapshot, live_positions, sweep)
+        notifier.send_daily_status(snapshot, live_positions, sweep, queued=len(_pending))
     except Exception as exc:  # noqa: BLE001 - a reporting bug must not break the job
         logger.error(f"Could not send daily status push: {exc}", exc_info=True)
 
@@ -700,7 +789,7 @@ _JOB_SPECS = {
 }
 
 _JOB_WORK = {
-    "execute": lambda: pre_open_execute(),
+    "execute": lambda: _execute_job(),
     "confirm": lambda: fill_confirm(),
     "confirm-final": lambda: fill_confirm(final=True),
     "scan":    lambda: post_close_scan(),

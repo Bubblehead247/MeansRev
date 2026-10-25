@@ -76,7 +76,7 @@ CSV_FILE = Path(__file__).resolve().parent / "sectors.csv"
 def _load_persisted() -> dict[str, str]:
     m: dict[str, str] = {}
     if CSV_FILE.exists():
-        with open(CSV_FILE, newline="") as f:
+        with open(CSV_FILE, newline="", encoding="utf-8") as f:
             for row in csv.DictReader(f):
                 m[row["symbol"]] = row["sector"]
     return m
@@ -120,7 +120,7 @@ def classify(symbol: str) -> tuple[str, str]:
 
 def persist(rows: list[dict]) -> None:
     """Write symbol → sector/type map to sectors.csv (committed, read live)."""
-    with open(CSV_FILE, "w", newline="") as f:
+    with open(CSV_FILE, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=["symbol", "sector", "type"])
         writer.writeheader()
         for r in rows:

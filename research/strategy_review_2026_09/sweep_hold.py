@@ -2,6 +2,8 @@
 import pickle
 from dataclasses import replace
 from pathlib import Path
+import os
+BARS_DIR = Path(os.environ.get("MARKET_DATA_DIR", Path(__file__).resolve().parents[3] / "market-data")) / "archive_pickles" / "meansrev_bars"
 
 import pandas as pd
 
@@ -9,7 +11,7 @@ import live_engine as le
 import config
 
 yf = pickle.loads(Path("prep.pkl").read_bytes())
-al = le.prepare(pickle.loads(Path("bars_alpaca.pkl").read_bytes()))
+al = le.prepare(pickle.loads(BARS_DIR / "bars_alpaca.pkl".read_bytes()))
 C = le.Params(symbols=list(config.SYMBOLS))
 rows = {}
 for days in (7, 8, 9, 10, 12, 14):
